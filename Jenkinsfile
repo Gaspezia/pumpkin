@@ -16,6 +16,11 @@ metadata:
     app.kubernetes.io/part-of: pumpkin-image
 spec:
   serviceAccountName: jenkins-agent
+  # Nœud de build dédié (taint pool=ci) : c'est le seul à avoir ~10 Gi libres.
+  nodeSelector:
+    pool: ci
+  tolerations:
+    - { key: pool, operator: Equal, value: ci, effect: NoSchedule }
   containers:
     - name: jnlp
       image: nexus.gaspezia.lan/docker-private/jenkins-inbound-agent:gaspezia
@@ -27,8 +32,9 @@ spec:
       command: ["sleep", "infinity"]
       tty: true
       resources:
-        requests: { cpu: "2", memory: "6Gi", ephemeral-storage: "10Gi" }
-        limits:   { cpu: "4", memory: "8Gi", ephemeral-storage: "16Gi" }
+        # Mesure 2026-11-10 : lien final (LTO fat) = 9,9 Go de RSS pour un seul processus. A 8Gi : OOMKilled (builds #2 a #4).
+        requests: { cpu: "2", memory: "8Gi", ephemeral-storage: "10Gi" }
+        limits:   { cpu: "4", memory: "12Gi", ephemeral-storage: "16Gi" }
     - name: kaniko
       image: gcr.io/kaniko-project/executor:debug
       command: ["/busybox/cat"]
