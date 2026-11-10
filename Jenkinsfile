@@ -28,7 +28,7 @@ spec:
       tty: true
       resources:
         requests: { cpu: "2", memory: "6Gi", ephemeral-storage: "10Gi" }
-        limits:   { cpu: "4", memory: "8Gi", ephemeral-storage: "20Gi" }
+        limits:   { cpu: "4", memory: "8Gi", ephemeral-storage: "16Gi" }
     - name: kaniko
       image: gcr.io/kaniko-project/executor:debug
       command: ["/busybox/cat"]
