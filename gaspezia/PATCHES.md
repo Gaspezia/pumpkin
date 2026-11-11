@@ -8,6 +8,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | # | Sujet | Commit(s) | PR / issue upstream | Statut | Date |
 |---|-------|-----------|---------------------|--------|------|
 | 1 | SDK invite du plugin API v0.2 (`plugin-v0_2`) | merge `1a5cff98f` (tete de PR `0740d3f6`) | Pumpkin-MC/Pumpkin#3962 | ouverte, non fusionnee upstream | 2026-11-10 |
+| 2 | Confirmation de teleport : id perime ou inconnu ignore (plus de kick), kick seulement pour un doublon du dernier id sans attente (vanilla `handleAcceptTeleportPacket`) ; branche `gaspezia-patch/ignore-stale-teleport-id`, fichier `crates/pumpkin-core/src/net/java/play/confirm_teleport.rs`. Proposable upstream : oui (correctif autonome, test unitaire inclus) | voir `git log` de la branche | aucune (non proposee) | local, non pousse | 2026-11-11 |
 
 Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 
