@@ -3575,6 +3575,17 @@ impl World {
             (position, info.spawn_yaw, info.spawn_pitch)
         };
 
+        // Let plugins choose the join position (known or new player) before it is applied
+        // or any position packet is sent, like Paper's AsyncPlayerSpawnLocationEvent.
+        let position = {
+            let mut event = crate::plugin::api::events::player::player_spawn_location::PlayerSpawnLocationEvent::new(
+                player.clone(),
+                position,
+            );
+            server.plugin_manager.fire(server, &mut event).await;
+            event.spawn_pos
+        };
+
         // Load chunks around the real spawn position before teleporting the client there.
         player.living_entity.entity.set_pos(position);
         player.living_entity.entity.set_rotation(yaw, pitch);
