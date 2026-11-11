@@ -14,7 +14,7 @@ enum TeleportConfirm {
 
 /// `latest_id` is the last id sent (vanilla `awaitingTeleport`), `awaiting` whether
 /// a confirmation is still pending (vanilla `awaitingPositionFromClient != null`).
-fn classify_confirm(latest_id: i32, awaiting: bool, confirmed_id: i32) -> TeleportConfirm {
+const fn classify_confirm(latest_id: i32, awaiting: bool, confirmed_id: i32) -> TeleportConfirm {
     if confirmed_id != latest_id {
         TeleportConfirm::Ignore
     } else if awaiting {
@@ -46,7 +46,9 @@ impl JavaClient {
         drop(awaiting_teleport);
 
         if result == TeleportConfirm::Kick {
-            self.try_kick(&TextComponent::text("Send Teleport confirm, but we did not teleport"));
+            self.try_kick(&TextComponent::text(
+                "Send Teleport confirm, but we did not teleport",
+            ));
         }
     }
 }
