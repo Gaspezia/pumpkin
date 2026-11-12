@@ -10,7 +10,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 1 | SDK invite du plugin API v0.2 (`plugin-v0_2`) | merge `1a5cff98f` (tete de PR `0740d3f6`) | Pumpkin-MC/Pumpkin#3962 | ouverte, non fusionnee upstream | 2026-11-10 |
 | 2 | Confirmation de teleport : id perime ou inconnu ignore (plus de kick), kick seulement pour un doublon du dernier id sans attente (vanilla `handleAcceptTeleportPacket`) ; branche `gaspezia-patch/ignore-stale-teleport-id`, fichier `crates/pumpkin-core/src/net/java/play/confirm_teleport.rs`. Proposable upstream : oui (correctif autonome, test unitaire inclus) | PR Gaspezia/pumpkin #1 (merge `4558864a4`) | aucune (proposable) | merge | 2026-11-11 |
 | 3 | `player-spawn-location-event` tire aussi au join | branche `gaspezia-patch/spawn-location-on-join` | aucune (proposable) | PR Gaspezia/pumpkin #2 | 2026-11-11 |
-| 4 | Metriques du processus pour les plugins v0.2 : `server.get-process-info` (temps CPU, CPU du cgroup, RSS, `memory.max`) et `world.get-loaded-chunk-count` | branche `gaspezia-patch/process-metrics` | aucune (proposable) | PR Gaspezia/pumpkin (a ouvrir) | 2026-11-12 |
+| 4 | Metriques du processus pour les plugins v0.2 : `server.get-process-info` (temps CPU, CPU du cgroup, RSS, `memory.max`) et `world.get-loaded-chunk-count` | branche `gaspezia-patch/process-metrics` | aucune (proposable) | PR Gaspezia/pumpkin #3 | 2026-11-12 |
 
 ### Patch 3 : `player-spawn-location-event` au join
 
