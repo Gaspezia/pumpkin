@@ -21,7 +21,7 @@ use crate::{
             player::{BanIpOptions, BanPlayerOptions, Player},
             server::{
                 BanManager as WitBanManager, BannedIpEntry, BannedPlayerEntry, Difficulty,
-                Dimension, OpEntry, OpManager as WitOpManager, Server, SysInfo,
+                Dimension, OpEntry, OpManager as WitOpManager, ProcessInfo, Server, SysInfo,
                 WhitelistEntry as WitWhitelistEntry, WhitelistManager as WitWhitelistManager,
             },
             uuid::Uuid as WitUuid,
@@ -74,6 +74,19 @@ impl pumpkin::plugin::server::HostServer for PluginHostState {
             os_name,
             os_version,
             pumpkin_version: env!("CARGO_PKG_VERSION").to_string(),
+        })
+    }
+
+    fn get_process_info(&mut self, _res: Resource<Server>) -> wasmtime::Result<ProcessInfo> {
+        let has_perm = |p: &str| self.permissions.iter().any(|perm| perm == p);
+        let cpu = has_perm(permissions::SYS_INFO) || has_perm(permissions::SYS_INFO_CPU);
+        let ram = has_perm(permissions::SYS_INFO) || has_perm(permissions::SYS_INFO_RAM);
+        let usage = (cpu || ram).then(current_process_usage).flatten();
+        Ok(ProcessInfo {
+            cpu_time_ms: usage.filter(|_| cpu).map(|(cpu_ms, _)| cpu_ms),
+            available_cpus: cpu.then(available_cpus),
+            memory_rss: usage.filter(|_| ram).map(|(_, rss)| rss),
+            memory_limit: ram.then(cgroup_memory_limit).flatten(),
         })
     }
 
@@ -1126,5 +1139,102 @@ impl pumpkin::plugin::server::HostWhitelistManagerWithStore<PluginHostState>
             }
         })
         .await
+    }
+}
+
+/// CPU time (ms) and resident set size (bytes) of the server process.
+fn current_process_usage() -> Option<(u64, u64)> {
+    let pid = sysinfo::get_current_pid().ok()?;
+    let mut sys = sysinfo::System::new().ok()?;
+    sys.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::Some(&[pid]),
+        false,
+        sysinfo::ProcessRefreshKind::nothing()
+            .with_cpu()
+            .with_memory(),
+    );
+    let process = sys.process(pid)?;
+    Some((process.accumulated_cpu_time(), process.memory()))
+}
+
+/// CPUs the process may use: cgroup v2 `cpu.max`, else cgroup v1 `cpu.cfs_quota_us` / `cpu.cfs_period_us`
+/// (quota rounded up), else the number of logical CPUs.
+fn available_cpus() -> u32 {
+    let read = |path: &str| std::fs::read_to_string(path).ok();
+    read("/sys/fs/cgroup/cpu.max")
+        .and_then(|max| parse_cpu_max(&max))
+        .or_else(|| {
+            let quota = read("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")?;
+            let period = read("/sys/fs/cgroup/cpu/cpu.cfs_period_us")?;
+            cpu_quota(quota.trim().parse().ok()?, period.trim().parse().ok()?)
+        })
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map_or(1, |n| u32::try_from(n.get()).unwrap_or(u32::MAX))
+        })
+}
+
+/// cgroup v2 `cpu.max` (`"<quota> <period>"` or `"max <period>"`).
+fn parse_cpu_max(content: &str) -> Option<u32> {
+    let mut parts = content.split_whitespace();
+    let quota = parts.next()?.parse().ok()?;
+    let period = parts.next()?.parse().ok()?;
+    cpu_quota(quota, period)
+}
+
+/// `ceil(quota / period)`, `None` without a positive quota (no limit).
+fn cpu_quota(quota: i64, period: i64) -> Option<u32> {
+    let quota = u64::try_from(quota).ok().filter(|&q| q > 0)?;
+    let period = u64::try_from(period).ok().filter(|&p| p > 0)?;
+    u32::try_from(quota.div_ceil(period)).ok()
+}
+
+/// Memory limit of the cgroup: v2 `memory.max`, else v1 `memory.limit_in_bytes`.
+fn cgroup_memory_limit() -> Option<u64> {
+    let read = |path: &str| std::fs::read_to_string(path).ok();
+    read("/sys/fs/cgroup/memory.max").map_or_else(
+        || {
+            read("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+                .and_then(|v1| parse_memory_limit(&v1))
+        },
+        |v2| parse_memory_limit(&v2),
+    )
+}
+
+/// A byte count; `max` (v2) and the huge "unlimited" value of v1 (about 2^63) mean no limit.
+fn parse_memory_limit(content: &str) -> Option<u64> {
+    content
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|&bytes| bytes < 1 << 60)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cpu_quota, parse_cpu_max, parse_memory_limit};
+
+    #[test]
+    fn cgroup_cpu_quota_is_rounded_up() {
+        assert_eq!(parse_cpu_max("200000 100000\n"), Some(2));
+        assert_eq!(parse_cpu_max("150000 100000"), Some(2));
+        assert_eq!(parse_cpu_max("50000 100000"), Some(1));
+        assert_eq!(parse_cpu_max("max 100000"), None);
+        assert_eq!(parse_cpu_max(""), None);
+        assert_eq!(cpu_quota(-1, 100_000), None);
+    }
+
+    #[test]
+    fn cgroup_memory_limit_ignores_unlimited() {
+        assert_eq!(parse_memory_limit("1073741824\n"), Some(1_073_741_824));
+        assert_eq!(parse_memory_limit("max\n"), None);
+        assert_eq!(parse_memory_limit("9223372036854771712"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn current_process_usage_is_read() {
+        let (_cpu_ms, rss) = super::current_process_usage().expect("process usage");
+        assert!(rss > 0);
     }
 }
