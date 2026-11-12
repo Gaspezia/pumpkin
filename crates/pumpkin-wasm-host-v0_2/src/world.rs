@@ -642,6 +642,11 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
         Ok(world_ref.level.is_chunk_loaded(&pos))
     }
 
+    fn get_loaded_chunk_count(&mut self, world: Resource<World>) -> wasmtime::Result<u32> {
+        let count = self.get(&world)?.level.loaded_chunk_count();
+        Ok(u32::try_from(count).unwrap_or(u32::MAX))
+    }
+
     fn get_chunk(
         &mut self,
         world: Resource<World>,

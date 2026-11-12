@@ -146,6 +146,19 @@ interface server {
         pumpkin-version: string,
     }
 
+    /// Resource usage of the server process itself, as opposed to the whole machine (`sys-info`).
+    record process-info {
+        /// CPU time (user + system) consumed by the server process since it started, in milliseconds.
+        cpu-time-ms: option<u64>,
+        /// CPUs the process may use: the cgroup CPU quota rounded up when one is set,
+        /// otherwise the number of logical CPUs.
+        available-cpus: option<u32>,
+        /// Resident set size of the server process, in bytes.
+        memory-rss: option<u64>,
+        /// Memory limit of the server's cgroup, in bytes (`none` when unlimited or unknown).
+        memory-limit: option<u64>,
+    }
+
     variant command-sender {
         console,
         player(player),
@@ -156,6 +169,10 @@ interface server {
         /// Returns system information (CPU, Memory, OS).
         /// Fields are returned only if the plugin has the corresponding permissions.
         get-sys-info: func() -> sys-info;
+
+        /// Returns the resource usage of the server process (CPU time, memory, cgroup limits).
+        /// CPU fields need `sys.info` or `sys.info.cpu`, memory fields `sys.info` or `sys.info.ram`.
+        get-process-info: func() -> process-info;
 
         /// Returns the current difficulty level of the server.
         get-difficulty: func() -> difficulty;

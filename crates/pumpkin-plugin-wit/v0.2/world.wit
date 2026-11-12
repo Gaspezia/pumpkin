@@ -823,6 +823,9 @@ interface %world {
         /// Returns whether the chunk at the specified chunk coordinates is currently loaded.
         is-chunk-loaded: func(x: s32, z: s32) -> bool;
 
+        /// Returns the number of chunks currently loaded in this world.
+        get-loaded-chunk-count: func() -> u32;
+
         /// Gets the block state ID at the specified position.
         get-block-state-id: func(pos: block-pos) -> u16;
 
