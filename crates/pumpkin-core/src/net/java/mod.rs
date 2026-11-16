@@ -1,6 +1,8 @@
 use pumpkin_protocol::java::client::play::{CChunkBatchEnd, CChunkBatchStart, CPlayDisconnect};
 use pumpkin_world::level::SyncChunk;
+use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{io::Write, sync::Arc};
@@ -760,19 +762,46 @@ impl JavaClient {
 
     /// `false` when the packet was dropped instead (cancelled, closed, buffer full).
     pub fn try_send_packet<P: ClientPacket>(&self, packet: &P) -> bool {
-        self.serialize_packet(packet)
-            .is_ok_and(|data| self.try_enqueue_packet_data(data))
+        match self.serialize_packet(packet) {
+            Ok(data) => self.try_enqueue_packet_data(data),
+            Err(err) => {
+                self.log_serialize_error::<P>(&err);
+                false
+            }
+        }
+    }
+
+    /// `warn!` once per packet type for the life of the process, `debug!` afterwards: the
+    /// same failure repeats on every sync, for every player.
+    fn log_serialize_error<P>(&self, err: &impl std::fmt::Display) {
+        static SEEN: LazyLock<std::sync::Mutex<HashSet<&'static str>>> =
+            LazyLock::new(|| std::sync::Mutex::new(HashSet::new()));
+        let name = std::any::type_name::<P>();
+        let first = SEEN.lock().is_ok_and(|mut seen| seen.insert(name));
+        if first {
+            warn!(
+                "Failed to serialize packet {name} for client {}: {err} (further errors for this packet are logged at debug level)",
+                self.id
+            );
+        } else {
+            debug!(
+                "Failed to serialize packet {name} for client {}: {err}",
+                self.id
+            );
+        }
     }
 
     pub async fn send_packet<P: ClientPacket>(&self, packet: &P) {
-        if let Ok(data) = self.serialize_packet(packet) {
-            self.send_packet_now(data).await;
+        match self.serialize_packet(packet) {
+            Ok(data) => self.send_packet_now(data).await,
+            Err(err) => self.log_serialize_error::<P>(&err),
         }
     }
 
     pub async fn enqueue_client_packet<P: ClientPacket>(&self, packet: &P) {
-        if let Ok(data) = self.serialize_packet(packet) {
-            self.enqueue_packet(data).await;
+        match self.serialize_packet(packet) {
+            Ok(data) => self.enqueue_packet(data).await,
+            Err(err) => self.log_serialize_error::<P>(&err),
         }
     }
 

@@ -1,6 +1,7 @@
 use crate::{
     ServerPacket,
-    ser::{NetworkReadExt, NetworkReadSliceExt, ReadingError},
+    java::server::play::{read_custom_click_payload, write_custom_click_payload},
+    ser::{NetworkReadSliceExt, ReadingError, WritingError},
 };
 use pumpkin_data::packet::serverbound::config::CUSTOM_CLICK_ACTION;
 use pumpkin_macros::java_packet;
@@ -13,10 +14,10 @@ pub struct SCustomClickAction<'a> {
 }
 
 impl<'a> ServerPacket<'a> for SCustomClickAction<'a> {
-    fn read(bytebuf: &mut &'a [u8], _version: &JavaMinecraftVersion) -> Result<Self, ReadingError> {
+    fn read(bytebuf: &mut &'a [u8], version: &JavaMinecraftVersion) -> Result<Self, ReadingError> {
         Ok(Self {
             action_id: bytebuf.get_str_borrowed()?,
-            payload: bytebuf.get_option(|v| v.read_remaining_slice_borrowed(32767))?,
+            payload: read_custom_click_payload(bytebuf, version)?,
         })
     }
 }
@@ -25,16 +26,10 @@ impl crate::ClientPacket for SCustomClickAction<'_> {
     fn write_packet_data(
         &self,
         mut write: impl std::io::Write,
-        _version: &JavaMinecraftVersion,
-    ) -> Result<(), crate::ser::WritingError> {
+        version: &JavaMinecraftVersion,
+    ) -> Result<(), WritingError> {
         use crate::ser::NetworkWriteExt;
         write.write_string(self.action_id)?;
-        if let Some(payload) = self.payload {
-            write.write_bool(true)?;
-            write.write_slice(payload)?;
-        } else {
-            write.write_bool(false)?;
-        }
-        Ok(())
+        write_custom_click_payload(&mut write, self.payload, version)
     }
 }
