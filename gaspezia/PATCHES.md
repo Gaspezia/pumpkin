@@ -12,6 +12,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 3 | `player-spawn-location-event` tire aussi au join (reapplique a la main le 2026-11-16 : upstream a reorganise `spawn_java_player`, #3708) | branche `gaspezia-patch/spawn-location-on-join` | aucune (proposable) | PR Gaspezia/pumpkin #2 | 2026-11-11 |
 | 4 | Metriques du processus pour les plugins v0.2 : `server.get-process-info` (temps CPU, CPU du cgroup, RSS, `memory.max`) et `world.get-loaded-chunk-count` (cette 2e fonction existe upstream depuis le 2026-11-16, meme signature : la version upstream est gardee) | branche `gaspezia-patch/process-metrics` | aucune (proposable) | PR Gaspezia/pumpkin #3 | 2026-11-12 |
 | 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
+| 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | local, non pousse | 2026-11-16 |
 
 ### Patch 3 : `player-spawn-location-event` au join
 
@@ -37,6 +38,23 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 - Limites : un `EntitySpawnEvent` annule fait renvoyer `none` (aucune fusee). Les couleurs sont stockees telles quelles (`u32 as i32`, pas de masque). Ecart Paper : `Firework.detonate()` explose au tick suivant (`setLife(lifetime + 1)`), ici l'explosion a lieu pendant l'appel ; le rendu client est identique. Le `FireworkExplodeEvent` peut annuler l'explosion (la fusee reste alors en vol).
 - Degats : l'explosion inflige les degats vanilla (5 + 2 x nombre d'explosions, rayon 5 blocs ; Paper identique) : faire exploser loin des joueurs.
 - Proposable upstream : oui (sans dependance Gaspezia), a condition de l'ouvrir via l'utilisateur.
+
+### Patch 6 : Dialogs depuis un plugin WASM v0.2
+
+- Quoi : `Dialog::to_nbt_compound(version)` ecrit a la main le format vanilla 26.3 (`Dialog.DIRECT_CODEC`) ; `DialogNBT::from_dialog` ne renvoie plus d'erreur pour un dialogue valide. Conventions imposees par l'hote (WIT inchangee) :
+  - cles des inputs : `key = "i{index}"` (`i0`, `i1`... dans l'ordre de `inputs`) ;
+  - ids des options de `single-option` : l'index decimal (`"0"`, `"1"`...) ; `initial-index` devient `initial: true` sur cette entree ;
+  - `after-action` `peek` et `pop` : `close` ; absent : champ omis (defaut vanilla) ; jamais `none` ;
+  - boutons repartis selon le type : `multi-action` -> `actions` (au moins un), `confirmation` -> `yes`/`no` (les deux premiers), `notice` -> `action` (le premier, optionnel), `server-links` -> champs communs seulement ;
+  - `custom-click` -> `minecraft:dynamic/custom` avec `id` et `additions` (le payload s'il se decode en compound NBT sans nom, sinon omis) ; `open-url` -> `minecraft:open_url` ;
+  - inputs : `number-range` -> `start`/`end`/`initial`/`step` ; `text` -> `initial` et `max_length` = max(32, longueur de `initial`) ; `boolean` -> `initial`.
+  - Valeurs recues au clic (`dialog-click-action-event.payload` = arbre NBT sans nom, compound) : cle `i{index}` -> `Byte` (boolean, 0/1), `Float` (number-range), `String` (text, et id de l'option choisie). Les cles des inputs ecrasent celles d'`additions`.
+  - Lecture du clic (config et play) : 26.2+ = VarInt de longueur (<= 65536) puis NBT, `00` = pas de payload ; avant 26.2 = bool + NBT (comportement precedent). Avant ce patch, un payload de 128 octets ou plus etait corrompu et l'absence de payload donnait `Some([0])`.
+  - `send_packet` / `enqueue_client_packet` journalisent (`warn!`) l'erreur de serialisation au lieu de l'avaler.
+- Pourquoi : `from_dialog` renvoyait « Serializing Dialog struct to NBT is not supported » et l'erreur etait avalee : le joueur ne voyait rien. Format verifie contre le vrai codec Java 26.3 (test `#[ignore]` `write_nbt_for_java_verifier` + harnais Java hors depot).
+- Fichiers : `crates/pumpkin-protocol/src/java/client/dialog.rs` ; `crates/pumpkin-protocol/src/java/server/{play,config}/custom_click_action.rs` ; `crates/pumpkin-wasm-host-v0_2/src/events/dialog.rs` ; `crates/pumpkin-core/src/net/java/mod.rs`.
+- Limites : `dialog-list` et les corps `item` sont refuses (erreur journalisee, rien affiche) ; `columns`, `exit_action`, `button_width`, `placeholder`, `label_visible`, `multiline` ne sont pas exprimables (WIT inchangee) ; les liens de `server-links` sont ignores (vanilla les prend du paquet server_links) ; `initial` hors de [min, max] et `step` <= 0 d'un `number-range` sont omis (le client les refuserait) ; le plugin doit valider lui-meme les valeurs recues (client modifiable).
+- Proposable upstream : oui pour le serialiseur et la lecture du clic (correctifs autonomes) ; la convention des cles `i{index}` est propre au fork (upstream voudra sans doute `key` dans le WIT, changement cassant).
 
 Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 
