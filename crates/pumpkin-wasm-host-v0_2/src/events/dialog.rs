@@ -141,9 +141,9 @@ pub(crate) fn protocol_dialog_from_wasm(
         buttons,
         links,
         exit_action: None,
+        // Vanilla has no peek/pop: both close the dialog; absent keeps the vanilla default.
         after_action: dialog.after_action.map(|a| match a {
-            AfterAction::Peek => "peek".to_string(),
-            AfterAction::Pop => "pop".to_string(),
+            AfterAction::Peek | AfterAction::Pop => "close".to_string(),
         }),
         can_close_with_escape: dialog.can_close_with_escape,
         external_title: dialog
@@ -337,10 +337,7 @@ pub(crate) fn protocol_dialog_to_wasm(
         inputs,
         buttons,
         links,
-        after_action: dialog.after_action.as_deref().map(|a| match a {
-            "peek" => AfterAction::Peek,
-            _ => AfterAction::Pop,
-        }),
+        after_action: dialog.after_action.as_deref().map(|_| AfterAction::Pop),
         can_close_with_escape: dialog.can_close_with_escape,
         external_title,
     }

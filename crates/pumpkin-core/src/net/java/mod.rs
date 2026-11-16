@@ -765,14 +765,24 @@ impl JavaClient {
     }
 
     pub async fn send_packet<P: ClientPacket>(&self, packet: &P) {
-        if let Ok(data) = self.serialize_packet(packet) {
-            self.send_packet_now(data).await;
+        match self.serialize_packet(packet) {
+            Ok(data) => self.send_packet_now(data).await,
+            Err(err) => warn!(
+                "Failed to serialize packet {} for client {}: {err}",
+                std::any::type_name::<P>(),
+                self.id
+            ),
         }
     }
 
     pub async fn enqueue_client_packet<P: ClientPacket>(&self, packet: &P) {
-        if let Ok(data) = self.serialize_packet(packet) {
-            self.enqueue_packet(data).await;
+        match self.serialize_packet(packet) {
+            Ok(data) => self.enqueue_packet(data).await,
+            Err(err) => warn!(
+                "Failed to serialize packet {} for client {}: {err}",
+                std::any::type_name::<P>(),
+                self.id
+            ),
         }
     }
 
