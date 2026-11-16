@@ -1,4 +1,5 @@
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
+use pumpkin_util::identifier::Identifier;
 use pumpkin_util::text::TextComponent;
 
 use crate::ser::{NetworkWriteExt, WritingError};
@@ -37,20 +38,34 @@ pub enum DialogNBTSource<'a> {
 }
 
 /// Vanilla `CommonButtonData` / `ActionButton`: `label`, `tooltip`, `width`, `action`.
-fn button_to_nbt(button: &ActionButton, version: JavaMinecraftVersion) -> NbtCompound {
+/// The client throws (and disconnects the player) on any invalid field, so every
+/// refusable value is an `Err` here instead of being sent.
+fn button_to_nbt(
+    button: &ActionButton,
+    version: JavaMinecraftVersion,
+) -> Result<NbtCompound, WritingError> {
     let mut c = NbtCompound::new();
     c.put("label", button.text.to_nbt_tag_for_version(&version));
     if let Some(tooltip) = &button.tooltip {
         c.put("tooltip", tooltip.to_nbt_tag_for_version(&version));
     }
     if let Some(width) = button.width {
+        // Vanilla `Dialog.WIDTH_CODEC` = intRange(1, 1024) (buttons, inputs and body alike).
+        if !(1..=1024).contains(&width) {
+            return Err(WritingError::Message(format!(
+                "Dialog button width {width} is outside 1..=1024"
+            )));
+        }
         c.put_int("width", i32::try_from(width).unwrap_or(i32::MAX));
     }
-    c.put_compound("action", action_to_nbt(&button.action, version));
-    c
+    c.put_compound("action", action_to_nbt(&button.action, version)?);
+    Ok(c)
 }
 
-fn action_to_nbt(action: &DialogAction, version: JavaMinecraftVersion) -> NbtCompound {
+fn action_to_nbt(
+    action: &DialogAction,
+    version: JavaMinecraftVersion,
+) -> Result<NbtCompound, WritingError> {
     let mut c = NbtCompound::new();
     match action {
         DialogAction::OpenUrl { url } => {
@@ -58,6 +73,11 @@ fn action_to_nbt(action: &DialogAction, version: JavaMinecraftVersion) -> NbtCom
             c.put_string("url", url.clone());
         }
         DialogAction::Custom { id, payload } => {
+            if Identifier::parse(id).is_err() {
+                return Err(WritingError::Message(format!(
+                    "Invalid custom click id {id:?}"
+                )));
+            }
             c.put_string("type", "minecraft:dynamic/custom".to_string());
             c.put_string("id", id.clone());
             // `additions` only when the payload is a valid unnamed NBT compound.
@@ -69,10 +89,14 @@ fn action_to_nbt(action: &DialogAction, version: JavaMinecraftVersion) -> NbtCom
             }
         }
     }
-    c
+    Ok(c)
 }
 
-fn input_to_nbt(index: usize, input: &DialogInput, version: JavaMinecraftVersion) -> NbtCompound {
+fn input_to_nbt(
+    index: usize,
+    input: &DialogInput,
+    version: JavaMinecraftVersion,
+) -> Result<NbtCompound, WritingError> {
     let mut c = NbtCompound::new();
     c.put_string("key", format!("i{index}"));
     match input {
@@ -108,8 +132,9 @@ fn input_to_nbt(index: usize, input: &DialogInput, version: JavaMinecraftVersion
             c.put("label", label.to_nbt_tag_for_version(&version));
             c.put_float("start", *min);
             c.put_float("end", *max);
-            // Optional in vanilla, which refuses an out-of-range `initial` or a `step` <= 0.
-            if (*min..=*max).contains(initial) {
+            // Optional in vanilla, which refuses an `initial` outside the real bounds (the
+            // range may be decreasing) or a `step` <= 0.
+            if (min.min(*max)..=min.max(*max)).contains(initial) {
                 c.put_float("initial", *initial);
             }
             if *step > 0.0 {
@@ -124,6 +149,11 @@ fn input_to_nbt(index: usize, input: &DialogInput, version: JavaMinecraftVersion
             options,
             initial_index,
         } => {
+            if options.is_empty() {
+                return Err(WritingError::Message(
+                    "single_option input needs at least one option".to_string(),
+                ));
+            }
             c.put_string("type", "minecraft:single_option".to_string());
             c.put("label", label.to_nbt_tag_for_version(&version));
             let entries = options
@@ -142,7 +172,7 @@ fn input_to_nbt(index: usize, input: &DialogInput, version: JavaMinecraftVersion
             c.put_list("options", entries);
         }
     }
-    c
+    Ok(c)
 }
 
 impl Dialog {
@@ -165,8 +195,15 @@ impl Dialog {
             c.put("external_title", t.to_nbt_tag_for_version(version));
         }
         c.put_bool("can_close_with_escape", self.can_close_with_escape);
+        // Vanilla only has `close`, `none` and `wait_for_response`; `none` needs `pause: false`
+        // and the plugin API never asks for it, so anything but `wait_for_response` closes.
         if let Some(after) = &self.after_action {
-            c.put_string("after_action", after.clone());
+            let after = if after == "wait_for_response" {
+                "wait_for_response"
+            } else {
+                "close"
+            };
+            c.put_string("after_action", after.to_string());
         }
 
         let mut body = Vec::with_capacity(self.body.len());
@@ -189,8 +226,8 @@ impl Dialog {
                 .inputs
                 .iter()
                 .enumerate()
-                .map(|(i, input)| NbtTag::Compound(input_to_nbt(i, input, *version)))
-                .collect();
+                .map(|(i, input)| input_to_nbt(i, input, *version).map(NbtTag::Compound))
+                .collect::<Result<_, _>>()?;
             c.put_list("inputs", inputs);
         }
 
@@ -203,20 +240,20 @@ impl Dialog {
                 let actions = self
                     .buttons
                     .iter()
-                    .map(|b| NbtTag::Compound(button(b)))
-                    .collect();
+                    .map(|b| button(b).map(NbtTag::Compound))
+                    .collect::<Result<_, _>>()?;
                 c.put_list("actions", actions);
             }
             "confirmation" => {
                 let (Some(yes), Some(no)) = (self.buttons.first(), self.buttons.get(1)) else {
                     return err("confirmation dialog needs two buttons (yes, no)");
                 };
-                c.put_compound("yes", button(yes));
-                c.put_compound("no", button(no));
+                c.put_compound("yes", button(yes)?);
+                c.put_compound("no", button(no)?);
             }
             "notice" => {
                 if let Some(b) = self.buttons.first() {
-                    c.put_compound("action", button(b));
+                    c.put_compound("action", button(b)?);
                 }
             }
             "server_links" => {}
@@ -579,7 +616,8 @@ mod tests {
                 payload: Some(payload),
             },
             V,
-        );
+        )
+        .unwrap();
         assert_eq!(c.get("additions"), Some(&NbtTag::Compound(add)));
         let c = action_to_nbt(
             &DialogAction::Custom {
@@ -587,7 +625,8 @@ mod tests {
                 payload: Some(vec![1, 2, 3]),
             },
             V,
-        );
+        )
+        .unwrap();
         assert!(c.get("additions").is_none());
 
         let long = "y".repeat(50);
@@ -599,8 +638,73 @@ mod tests {
                 default_value: long,
             },
             V,
-        );
+        )
+        .unwrap();
         assert_eq!(c.get_int("max_length"), Some(50));
+    }
+
+    #[test]
+    fn refusable_values_are_errors() {
+        let ok = |w: Option<u32>| {
+            let mut b = button("B", custom("a:b"));
+            b.width = w;
+            dialog("minecraft:notice", vec![b]).to_nbt_compound(&V)
+        };
+        assert!(ok(Some(1)).is_ok() && ok(Some(1024)).is_ok() && ok(None).is_ok());
+        assert!(ok(Some(0)).is_err() && ok(Some(1025)).is_err());
+        assert!(ok(Some(u32::MAX)).is_err());
+
+        for bad in ["A:b", "a:b c", "a:b:c"] {
+            let d = dialog("minecraft:notice", vec![button("B", custom(bad))]);
+            assert!(d.to_nbt_compound(&V).is_err(), "{bad:?}");
+        }
+        let d = dialog("minecraft:notice", vec![button("B", custom("a:b/c.d"))]);
+        assert!(d.to_nbt_compound(&V).is_ok());
+
+        let mut d = dialog("minecraft:notice", vec![]);
+        d.inputs = vec![DialogInput::SingleOption {
+            label: t("s"),
+            options: vec![],
+            initial_index: 0,
+        }];
+        assert!(d.to_nbt_compound(&V).is_err());
+    }
+
+    #[test]
+    fn decreasing_number_range_keeps_initial() {
+        let range = |min, max, initial| {
+            input_to_nbt(
+                0,
+                &DialogInput::NumberRange {
+                    label: t("n"),
+                    min,
+                    max,
+                    initial,
+                    step: 1.0,
+                    label_format: None,
+                },
+                V,
+            )
+            .unwrap()
+        };
+        let c = range(10.0, 0.0, 5.0);
+        assert_eq!(c.get_float("initial"), Some(5.0));
+        assert_eq!(c.get_float("start"), Some(10.0));
+        assert!(range(10.0, 0.0, 11.0).get("initial").is_none());
+        assert!(range(0.0, 10.0, -1.0).get("initial").is_none());
+    }
+
+    #[test]
+    fn after_action_only_close_or_wait_for_response() {
+        let after = |a: &str| {
+            let mut d = dialog("minecraft:notice", vec![]);
+            d.after_action = Some(a.into());
+            d.to_nbt_compound(&V).unwrap().get("after_action").cloned()
+        };
+        assert_eq!(after("wait_for_response"), Some(s("wait_for_response")));
+        for a in ["close", "peek", "pop", "none", "bogus"] {
+            assert_eq!(after(a), Some(s("close")), "{a}");
+        }
     }
 
     /// Writes the network NBT of the test dialogs to `$DIALOG_NBT_DIR` for
