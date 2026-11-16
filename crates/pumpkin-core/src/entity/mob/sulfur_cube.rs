@@ -188,7 +188,7 @@ fn apply_vertical_position_angle_power_rotation(
     }
 }
 
-fn is_swallowable_item(stack: &ItemStack) -> bool {
+pub(crate) fn is_swallowable_item(stack: &ItemStack) -> bool {
     stack
         .item
         .has_tag(&pumpkin_data::tag::Item::MINECRAFT_SULFUR_CUBE_SWALLOWABLE)
@@ -378,7 +378,7 @@ impl SulfurCubeEntity {
         world.spawn_entity(Arc::new(item_entity));
     }
 
-    fn detect_body_item_change(&self) {
+    pub(crate) fn detect_body_item_change(&self) {
         let current = self.body_item();
         let previous = {
             let mut last = self
@@ -467,7 +467,7 @@ impl SulfurCubeEntity {
         }
     }
 
-    fn can_explode(&self) -> bool {
+    pub(crate) fn can_explode(&self) -> bool {
         let has_explosion = self
             .archetype
             .lock()
@@ -510,7 +510,8 @@ impl SulfurCubeEntity {
                 ExplosionInteraction::None
             };
             let pos = entity.pos.load();
-            world.explode(
+            world.explode_from(
+                self,
                 Vector3::new(pos.x, entity.get_y(0.0625), pos.z),
                 explosion.power as f32,
                 interaction,
@@ -532,7 +533,7 @@ impl SulfurCubeEntity {
         }
     }
 
-    fn prime_time(&self, imminent: bool) -> bool {
+    pub(crate) fn prime_time(&self, imminent: bool) -> bool {
         let explosion = self
             .archetype
             .lock()
@@ -566,7 +567,7 @@ impl SulfurCubeEntity {
         true
     }
 
-    fn equip_item(&self, held_item: &ItemStack) -> bool {
+    pub(crate) fn equip_item(&self, held_item: &ItemStack) -> bool {
         if AgeableMob::is_baby(self) {
             return false;
         }
@@ -580,14 +581,16 @@ impl SulfurCubeEntity {
 
         self.mob_entity
             .set_item_slot_and_drop_when_killed(&EquipmentSlot::BODY, held_item.copy_with_count(1));
+        self.detect_body_item_change();
         self.play_sound(Sound::EntitySulfurCubeAbsorb);
         true
     }
 
-    fn shear(&self) {
+    pub(crate) fn shear(&self) {
         let body_item = self.body_item();
         self.mob_entity
             .set_item_slot(&EquipmentSlot::BODY, ItemStack::EMPTY.clone());
+        self.detect_body_item_change();
         self.spawn_at_attachment(body_item);
         self.play_sound(Sound::EntitySulfurCubeEject);
         self.pickup_timer
@@ -1050,10 +1053,6 @@ impl Mob for SulfurCubeEntity {
         true
     }
 
-    fn can_be_picked_from_inside(&self) -> bool {
-        !self.has_body_item()
-    }
-
     fn is_invulnerable_to_piercing_weapon(&self) -> bool {
         self.get_entity().invulnerable.load(Ordering::Relaxed) && !self.is_primed()
     }
@@ -1400,7 +1399,7 @@ impl LookControlTrait for SulfurCubeLookControl {
 
 struct SulfurCubeSearchForItemsGoal {
     cube: Weak<SulfurCubeEntity>,
-    target_item: Option<Arc<dyn EntityBase>>,
+    target_item: Option<Weak<dyn EntityBase>>,
 }
 
 impl Goal for SulfurCubeSearchForItemsGoal {
@@ -1438,7 +1437,9 @@ impl Goal for SulfurCubeSearchForItemsGoal {
                     .load()
                     .squared_distance_to_vec(&pos)
                     .total_cmp(&b.get_entity().pos.load().squared_distance_to_vec(&pos))
-            });
+            })
+            .as_ref()
+            .map(Arc::downgrade);
         self.target_item.is_some()
     }
 
@@ -1447,7 +1448,7 @@ impl Goal for SulfurCubeSearchForItemsGoal {
     }
 
     fn tick(&mut self, mob: &dyn Mob) {
-        let Some(target) = &self.target_item else {
+        let Some(target) = self.target_item.as_ref().and_then(Weak::upgrade) else {
             return;
         };
         mob.get_mob_entity()
