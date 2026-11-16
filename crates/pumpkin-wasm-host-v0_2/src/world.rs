@@ -19,6 +19,7 @@ use crate::pumpkin::plugin::world::{
     Block as WitBlock, BlockDirection as WitBlockDirection, BlockEntityType,
     BlockFlags as WitBlockFlags, BlockPos as WitBlockPos, BlockState as WitBlockState,
     BlockStateInfo as WitBlockStateInfo, BoundingBox as WitBoundingBox, Chunk as WitChunk,
+    FireworkExplosion as WitFireworkExplosion, FireworkShape as WitFireworkShape,
     Flammable as WitFlammable, NoteblockInstrument as WitNoteblockInstrument,
     PistonBehavior as WitPistonBehavior, RayTraceBlockResult as WitRayTraceBlockResult,
     RayTraceEntityResult as WitRayTraceEntityResult, WorldBorder as WitWorldBorder,
@@ -1572,6 +1573,48 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         accessor.add_res(entity)
     }
 
+    async fn spawn_firework(
+        accessor: &Accessor<PluginHostState, Self>,
+        world: Resource<World>,
+        pos: WitPosition,
+        flight_duration: u8,
+        explosions: Vec<WitFireworkExplosion>,
+        detonate: bool,
+    ) -> wasmtime::Result<Option<Resource<pumpkin::plugin::world::Entity>>> {
+        let world = accessor.with(|mut host| world_from_state(host.get(), &world))?;
+        let pos = pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2);
+        let mut stack =
+            pumpkin_data::item_stack::ItemStack::new(1, &pumpkin_data::item::Item::FIREWORK_ROCKET);
+        stack.set_data_component(build_fireworks(flight_duration, &explosions));
+        let entity = pumpkin_core::entity::Entity::new(
+            Arc::clone(&world),
+            pos,
+            &pumpkin_data::entity::EntityType::FIREWORK_ROCKET,
+        );
+        let rocket = Arc::new(
+            pumpkin_core::entity::projectile::firework_rocket::FireworkRocketEntity::new_with_stack(
+                entity, stack,
+            ),
+        );
+        let spawned = Arc::clone(&rocket);
+        let ok = run_blocking(accessor, move || {
+            if !world.spawn_entity(spawned.clone()) {
+                return false;
+            }
+            if detonate {
+                spawned.explode_and_remove(&world);
+            }
+            true
+        })
+        .await?;
+        if !ok {
+            return Ok(None);
+        }
+        accessor
+            .add_res(rocket as Arc<dyn pumpkin_core::entity::EntityBase>)
+            .map(Some)
+    }
+
     async fn strike_lightning(
         accessor: &Accessor<PluginHostState, Self>,
         world: Resource<World>,
@@ -2857,9 +2900,96 @@ pub(crate) fn from_wit_biome(
         .ok_or_else(|| wasmtime::Error::msg(format!("Invalid biome index: {index}")))
 }
 
+/// Builds the `fireworks` item component from WIT explosions. Colors are RGB `u32` stored as
+/// `i32`; explosions, colors and fade colors are capped at 256 like the network codec.
+fn build_fireworks(
+    flight_duration: u8,
+    explosions: &[WitFireworkExplosion],
+) -> pumpkin_data::data_component_impl::FireworksImpl {
+    use pumpkin_data::data_component_impl::{
+        FireworkExplosionImpl, FireworkExplosionShape as Shape, FireworksImpl,
+    };
+    const MAX: usize = 256;
+    let colors = |c: &[u32]| c.iter().take(MAX).map(|&c| c as i32).collect::<Vec<_>>();
+    FireworksImpl::new(
+        i32::from(flight_duration),
+        explosions
+            .iter()
+            .take(MAX)
+            .map(|e| {
+                FireworkExplosionImpl::new(
+                    match e.shape {
+                        WitFireworkShape::SmallBall => Shape::SmallBall,
+                        WitFireworkShape::LargeBall => Shape::LargeBall,
+                        WitFireworkShape::Star => Shape::Star,
+                        WitFireworkShape::Creeper => Shape::Creeper,
+                        WitFireworkShape::Burst => Shape::Burst,
+                    },
+                    colors(&e.colors),
+                    colors(&e.fade_colors),
+                    e.trail,
+                    e.twinkle,
+                )
+            })
+            .collect(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn explosion(shape: WitFireworkShape, n: usize) -> WitFireworkExplosion {
+        WitFireworkExplosion {
+            shape,
+            colors: (0..n as u32).map(|i| 0xFF_00_00 + i).collect(),
+            fade_colors: vec![0x00_00_FF],
+            trail: true,
+            twinkle: false,
+        }
+    }
+
+    #[test]
+    fn build_fireworks_maps_shapes_colors_and_flags() {
+        use pumpkin_data::data_component_impl::FireworkExplosionShape as Shape;
+        let shapes = [
+            (WitFireworkShape::SmallBall, Shape::SmallBall),
+            (WitFireworkShape::LargeBall, Shape::LargeBall),
+            (WitFireworkShape::Star, Shape::Star),
+            (WitFireworkShape::Creeper, Shape::Creeper),
+            (WitFireworkShape::Burst, Shape::Burst),
+        ];
+        for (i, (wit, internal)) in shapes.into_iter().enumerate() {
+            assert_eq!(wit as i32, i as i32);
+            let fw = build_fireworks(2, &[explosion(wit, 1)]);
+            assert_eq!(fw.flight_duration, 2);
+            let e = &fw.explosions[0];
+            assert_eq!(e.shape, internal);
+            assert_eq!(e.shape.to_id(), i as i32);
+            assert_eq!(e.colors, vec![0xFF_00_00]);
+            assert_eq!(e.fade_colors, vec![0x00_00_FF]);
+            assert!(e.has_trail && !e.has_twinkle);
+        }
+    }
+
+    #[test]
+    fn build_fireworks_caps_at_256_and_roundtrips_through_the_codec() {
+        use pumpkin_data::data_component::DataComponent;
+        use pumpkin_data::data_component_impl::FireworksImpl;
+        use pumpkin_protocol::codec::data_component::{deserialize, serialize};
+        let many = vec![explosion(WitFireworkShape::Star, 300); 300];
+        let fw = build_fireworks(255, &many);
+        assert_eq!(fw.explosions.len(), 256);
+        assert_eq!(fw.explosions[0].colors.len(), 256);
+
+        let mut buf = Vec::new();
+        serialize(DataComponent::Fireworks, &fw, &mut buf).unwrap();
+        let back = deserialize(DataComponent::Fireworks, &mut std::io::Cursor::new(buf)).unwrap();
+        let back = back.as_any().downcast_ref::<FireworksImpl>().unwrap();
+        assert_eq!(back.flight_duration, 255);
+        assert_eq!(back.explosions.len(), 256);
+        assert_eq!(back.explosions[0].colors, fw.explosions[0].colors);
+    }
 
     #[test]
     fn wit_particle_ids_match_internal_particle_ids() {

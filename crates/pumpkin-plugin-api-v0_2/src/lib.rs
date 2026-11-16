@@ -139,8 +139,9 @@ pub use wit::pumpkin::plugin::player::{
 pub use wit::pumpkin::plugin::scoreboard::{CollisionRule, NametagVisibility, TeamSettings};
 pub use wit::pumpkin::plugin::server::Dimension;
 pub use wit::pumpkin::plugin::world::{
-    Block, BlockDirection, BlockState, BlockStateInfo, Flammable, LivingEntity, Mob, PathNodeType,
-    RayTraceBlockResult, RayTraceEntityResult, RaycastResult, World, WorldBorder,
+    Block, BlockDirection, BlockState, BlockStateInfo, FireworkExplosion, FireworkShape, Flammable,
+    LivingEntity, Mob, PathNodeType, RayTraceBlockResult, RayTraceEntityResult, RaycastResult,
+    World, WorldBorder,
 };
 pub use worldgen::{ChunkGenerator, GeneratorManager, register_chunk_generator};
 

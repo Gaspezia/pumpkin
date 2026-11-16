@@ -796,6 +796,24 @@ interface %world {
         has-custom-data: func(namespace: string, key: string) -> bool;
     }
 
+    /// Shape of a firework explosion (vanilla `firework_explosion.shape`, ids 0-4).
+    enum firework-shape {
+        small-ball,
+        large-ball,
+        star,
+        creeper,
+        burst,
+    }
+
+    /// One explosion of a firework rocket. Colors are RGB (`0xRRGGBB`). At most 256 colors and 256 fade colors are kept.
+    record firework-explosion {
+        shape: firework-shape,
+        colors: list<u32>,
+        fade-colors: list<u32>,
+        trail: bool,
+        twinkle: bool,
+    }
+
     /// Represents the boundaries of a world.
     resource world-border {
         /// Gets the center X coordinate of the border.
@@ -1085,6 +1103,11 @@ interface %world {
 
         /// Spawns an entity of the specified type at the given position.
         spawn-entity: async func(entity-type: entity-type, pos: position) -> entity;
+
+        /// Spawns a firework rocket carrying `explosions` (RGB colors, at most 256 kept). `flight-duration` as the `fireworks` component (0-255).
+        /// `detonate` = true: the rocket explodes during this call (clients get spawn, metadata, entity event 17, removal).
+        /// Returns `none` if an entity spawn event handler cancels the spawn.
+        spawn-firework: async func(pos: position, flight-duration: u8, explosions: list<firework-explosion>, detonate: bool) -> option<entity>;
 
         /// Spawns a dropped item entity with the given item stack at the exact position with zero initial velocity.
         drop-item: async func(pos: position, item: item-stack) -> entity;
