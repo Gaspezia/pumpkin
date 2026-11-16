@@ -11,7 +11,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 2 | Confirmation de teleport : id perime ou inconnu ignore (plus de kick), kick seulement pour un doublon du dernier id sans attente (vanilla `handleAcceptTeleportPacket`) ; branche `gaspezia-patch/ignore-stale-teleport-id`, fichier `crates/pumpkin-core/src/net/java/play/confirm_teleport.rs`. Proposable upstream : oui (correctif autonome, test unitaire inclus) | PR Gaspezia/pumpkin #1 (merge `4558864a4`) | aucune (proposable) | merge | 2026-11-11 |
 | 3 | `player-spawn-location-event` tire aussi au join (reapplique a la main le 2026-11-16 : upstream a reorganise `spawn_java_player`, #3708) | branche `gaspezia-patch/spawn-location-on-join` | aucune (proposable) | PR Gaspezia/pumpkin #2 | 2026-11-11 |
 | 4 | Metriques du processus pour les plugins v0.2 : `server.get-process-info` (temps CPU, CPU du cgroup, RSS, `memory.max`) et `world.get-loaded-chunk-count` (cette 2e fonction existe upstream depuis le 2026-11-16, meme signature : la version upstream est gardee) | branche `gaspezia-patch/process-metrics` | aucune (proposable) | PR Gaspezia/pumpkin #3 | 2026-11-12 |
-| 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | local, pas de PR | 2026-11-16 |
+| 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
 
 ### Patch 3 : `player-spawn-location-event` au join
 
@@ -35,6 +35,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 - Pourquoi : le mode Java dessine des feux d'artifice colores (victoire, fins de manche) avec `FireworkMeta` ; un plugin WASM n'avait aucun moyen de creer une fusee ni d'en fixer les explosions.
 - Fichiers : `crates/pumpkin-plugin-wit/v0.2/world.wit` ; `crates/pumpkin-wasm-host-v0_2/src/world.rs` (`spawn_firework`, `build_fireworks`, tests) et `bindings.rs` (fonction asynchrone) ; `crates/pumpkin-plugin-api-v0_2/src/lib.rs` (reexport des 2 types). Aucune modification du coeur.
 - Limites : un `EntitySpawnEvent` annule fait renvoyer `none` (aucune fusee). Les couleurs sont stockees telles quelles (`u32 as i32`, pas de masque). Ecart Paper : `Firework.detonate()` explose au tick suivant (`setLife(lifetime + 1)`), ici l'explosion a lieu pendant l'appel ; le rendu client est identique. Le `FireworkExplodeEvent` peut annuler l'explosion (la fusee reste alors en vol).
+- Degats : l'explosion inflige les degats vanilla (5 + 2 x nombre d'explosions, rayon 5 blocs ; Paper identique) : faire exploser loin des joueurs.
 - Proposable upstream : oui (sans dependance Gaspezia), a condition de l'ouvrir via l'utilisateur.
 
 Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).

@@ -1106,6 +1106,7 @@ interface %world {
 
         /// Spawns a firework rocket carrying `explosions` (RGB colors, at most 256 kept). `flight-duration` as the `fireworks` component (0-255).
         /// `detonate` = true: the rocket explodes during this call (clients get spawn, metadata, entity event 17, removal).
+        /// The explosion deals vanilla damage (5 + 2 x number of explosions, radius 5 blocks; same as Paper): detonate away from players.
         /// Returns `none` if an entity spawn event handler cancels the spawn.
         spawn-firework: async func(pos: position, flight-duration: u8, explosions: list<firework-explosion>, detonate: bool) -> option<entity>;
 
