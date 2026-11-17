@@ -508,11 +508,13 @@ impl Scoreboard {
         self.add_team(target, team);
     }
 
-    pub fn update_team(&mut self, target: &impl ScoreboardTarget, team: Team) {
-        if !self.teams.contains_key(&team.name) {
+    pub fn update_team(&mut self, target: &impl ScoreboardTarget, mut team: Team) {
+        let Some(existing) = self.teams.get_mut(&team.name) else {
             warn!("Tried to update Team which does not exist, {}", team.name);
             return;
-        }
+        };
+        // Like vanilla `PlayerTeam`, an update only changes options: members stay.
+        team.players = std::mem::take(&mut existing.players);
 
         let parameters = TeamParameters {
             display_name: &team.display_name,
@@ -1274,5 +1276,44 @@ impl BedrockScoreboardBuilder {
     #[must_use]
     pub fn build(self) -> BedrockScoreboard {
         self.scoreboard
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn team(collision_rule: CollisionRule, options: i8) -> Team {
+        Team {
+            name: "t".to_string(),
+            display_name: TextComponent::text("t"),
+            options,
+            nametag_visibility: NameTagVisibility::Always,
+            collision_rule,
+            color: NamedColor::White,
+            player_prefix: TextComponent::text(""),
+            player_suffix: TextComponent::text(""),
+            players: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn update_team_keeps_members_and_applies_options() {
+        let mut sb = Scoreboard::new();
+        sb.add_team(
+            &NoTarget,
+            team(CollisionRule::Never, Team::ALLOW_FRIENDLY_FIRE),
+        );
+        sb.add_player_to_team(&NoTarget, "t", "a".to_string());
+        sb.add_player_to_team(&NoTarget, "t", "b".to_string());
+
+        // Incoming update carries no members, like the WASM host builds it.
+        sb.update_team(&NoTarget, team(CollisionRule::Always, 0));
+
+        let updated = sb.get_team("t").unwrap();
+        assert_eq!(updated.players, vec!["a".to_string(), "b".to_string()]);
+        assert!(sb.get_entity_team("a").is_some());
+        assert!(matches!(updated.collision_rule, CollisionRule::Always));
+        assert!(!updated.is_allow_friendly_fire());
     }
 }

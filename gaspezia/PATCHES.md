@@ -13,6 +13,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 4 | Metriques du processus pour les plugins v0.2 : `server.get-process-info` (temps CPU, CPU du cgroup, RSS, `memory.max`) et `world.get-loaded-chunk-count` (cette 2e fonction existe upstream depuis le 2026-11-16, meme signature : la version upstream est gardee) | branche `gaspezia-patch/process-metrics` | aucune (proposable) | PR Gaspezia/pumpkin #3 | 2026-11-12 |
 | 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
+| 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
 
 ### Patch 3 : `player-spawn-location-event` au join
 
@@ -58,6 +59,14 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 - Proposable upstream : oui pour le serialiseur et la lecture du clic (correctifs autonomes) ; la convention des cles `i{index}` est propre au fork (upstream voudra sans doute `key` dans le WIT, changement cassant).
 
 Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
+
+### Patch 7 : `update_team` conserve les membres
+
+- Quoi : `Scoreboard::update_team` remplacait l'equipe par celle construite par l'appelant (l'hote WASM la construit avec `players: []`) : la liste des membres cote serveur etait perdue. Elle est maintenant reprise de l'equipe existante avant le remplacement. Le paquet `CSetPlayerTeam` en mode `Update` n'est pas modifie : il ne porte que les options, sans membres, comme vanilla (`ClientboundSetPlayerTeamPacket.createPlayerPacket(team, false)`) ; le client garde donc les siens.
+- Pourquoi : apres un `update_team`, `get_entity_team(nom)` renvoyait `None` et la regle de collision d'equipe du coeur (`is_allowed_by_team_rules`, `push_entities`) ne s'appliquait plus aux joueurs de l'equipe. Un mode qui met a jour l'equipe a chaque manche perdait la regle des la 1re.
+- Fichiers : `crates/pumpkin-core/src/world/scoreboard.rs` (`update_team` + module `tests`, test `update_team_keeps_members_and_applies_options`, ecrit d'abord et rouge avant le correctif).
+- Limites : un `update_team` ne peut plus vider les membres (il faut `clear_team_players` ou `remove_player_from_team`, comme vanilla). La copie WASM v0_1 passe par la meme methode du coeur : corrigee du meme coup.
+- Proposable upstream : oui (sans dependance Gaspezia), a condition de l'ouvrir via l'utilisateur.
 
 ## Journal des mises a jour
 
