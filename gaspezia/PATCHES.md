@@ -10,10 +10,13 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 1 | SDK invite du plugin API v0.2 (`plugin-v0_2`) | merge `1a5cff98f` (tete de PR `0740d3f6`), remis a jour le 2026-11-16 (tete `cc9102bd2`, qui retire `pumpkin-plugin-helpers` et retouche le SDK invite) | Pumpkin-MC/Pumpkin#3962 | ouverte, non fusionnee upstream | 2026-11-10 |
 | 2 | Confirmation de teleport : id perime ou inconnu ignore (plus de kick), kick seulement pour un doublon du dernier id sans attente (vanilla `handleAcceptTeleportPacket`) ; branche `gaspezia-patch/ignore-stale-teleport-id`, fichier `crates/pumpkin-core/src/net/java/play/confirm_teleport.rs`. Proposable upstream : oui (correctif autonome, test unitaire inclus) | PR Gaspezia/pumpkin #1 (merge `4558864a4`) | aucune (proposable) | merge | 2026-11-11 |
 | 3 | `player-spawn-location-event` tire aussi au join (reapplique a la main le 2026-11-16 : upstream a reorganise `spawn_java_player`, #3708) | branche `gaspezia-patch/spawn-location-on-join` | aucune (proposable) | PR Gaspezia/pumpkin #2 | 2026-11-11 |
-| 4 | Metriques du processus pour les plugins v0.2 : `server.get-process-info` (temps CPU, CPU du cgroup, RSS, `memory.max`) et `world.get-loaded-chunk-count` (cette 2e fonction existe upstream depuis le 2026-11-16, meme signature : la version upstream est gardee) | branche `gaspezia-patch/process-metrics` | aucune (proposable) | PR Gaspezia/pumpkin #3 | 2026-11-12 |
+| 4 | Metriques du processus pour les plugins v0.2 : `server.get-process-info` (temps CPU, CPU du cgroup, RSS, working set du cgroup, `memory.max`) et `world.get-loaded-chunk-count` (cette 2e fonction existe upstream depuis le 2026-11-16, meme signature : la version upstream est gardee) | branche `gaspezia-patch/process-metrics` | aucune (proposable) | PR Gaspezia/pumpkin #3 | 2026-11-12 |
 | 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
+| 8 | `play-sound`, `play-sound-at` et `stop-sound` de l'hote v0.2 : correspondance fiable entre le variant WIT et `pumpkin_data::sound::Sound` (plus de trap sur tout son) | branche `gaspezia-patch/plugin-play-sound` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
+| 9 | `custom_name` d'un objet garde ses styles (gras, couleurs) a l'encodage reseau : `CustomNameImpl` encode comme `LoreImpl` | branche `gaspezia-patch/custom-name-styles` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
+| 10 | `display.set-interpolation-start` toujours renvoye au client (champ force comme vanilla) : `SynchedEntityData::set_forced` | branche `gaspezia-patch/forced-interpolation` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
 | 11 | Un trap de plugin journalise sa cause complete (chaine `Caused by`) : `DriverError` et log du scheduler en `Debug` | branche `gaspezia-patch/plugin-trap-cause` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
 
 ### Patch 3 : `player-spawn-location-event` au join
@@ -26,7 +29,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 
 ### Patch 4 : metriques du processus pour les plugins
 
-- Quoi : WIT v0.2, ajout seulement (les plugins compiles avant restent compatibles). `server.get-process-info() -> process-info` : `cpu-time-ms` (temps CPU utilisateur + systeme du processus, sysinfo), `available-cpus` (quota `cpu.max` cgroup v2 arrondi au-dessus, sinon `cpu.cfs_quota_us / cpu.cfs_period_us` v1, sinon CPU logiques), `memory-rss` (sysinfo), `memory-limit` (`memory.max` v2 ou `memory.limit_in_bytes` v1, `none` si illimite). Champs CPU soumis a `sys.info` ou `sys.info.cpu`, memoire a `sys.info` ou `sys.info.ram`, comme `get-sys-info`. `world.get-loaded-chunk-count() -> u32` (`Level::loaded_chunk_count`).
+- Quoi : WIT v0.2, ajout seulement (les plugins compiles avant restent compatibles). `server.get-process-info() -> process-info` : `cpu-time-ms` (temps CPU utilisateur + systeme du processus, sysinfo), `available-cpus` (quota `cpu.max` cgroup v2 arrondi au-dessus, sinon `cpu.cfs_quota_us / cpu.cfs_period_us` v1, sinon CPU logiques), `memory-rss` (sysinfo), `memory-working-set` (working set du cgroup, comme kubelet et `kubectl top` : `memory.current` - `inactive_file` de `memory.stat` en v2, `memory.usage_in_bytes` - `total_inactive_file` en v1, `none` hors cgroup ; ajoute le 2026-11-19, le RSS comptait ~60 Mio de cache de fichier de plus), `memory-limit` (`memory.max` v2 ou `memory.limit_in_bytes` v1, `none` si illimite). Champs CPU soumis a `sys.info` ou `sys.info.cpu`, memoire a `sys.info` ou `sys.info.ram`, comme `get-sys-info`. `world.get-loaded-chunk-count() -> u32` (`Level::loaded_chunk_count`).
 - Pourquoi : le `/gc` de GAPI (Java) affiche charge CPU du processus, memoire et chunks charges par monde ; un plugin WASM n'a ni `/proc` ni cgroup (aucun repertoire ouvert dans le contexte WASI) et `get-sys-info` ne donne que la machine entiere.
 - Fichiers : `crates/pumpkin-plugin-wit/v0.2/server.wit` ; `crates/pumpkin-wasm-host-v0_2/src/server.rs` (lecture cgroup + tests). `world.get-loaded-chunk-count` est upstream depuis la mise a jour du 2026-11-16.
 - Limites : la charge CPU se calcule cote plugin entre deux releves de `cpu-time-ms` ; lecture cgroup Linux seulement (ailleurs : CPU logiques, pas de limite).
@@ -69,6 +72,30 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : un `update_team` ne peut plus vider les membres (il faut `clear_team_players` ou `remove_player_from_team`, comme vanilla). La copie WASM v0_1 passe par la meme methode du coeur : corrigee du meme coup.
 - Proposable upstream : oui (sans dependance Gaspezia), a condition de l'ouvrir via l'utilisateur.
 
+### Patch 8 : `play-sound` de l'hote v0.2
+
+- Quoi : le nom interne etait construit par `format!("{sound:?}")` en minuscules (`Debug` d'un enum wasmtime donne `Sound::EntityGenericExplode`) et ne correspondait a aucun son : `Unknown sound`, erreur `wasmtime` et instance du plugin tuee. `from_wit_sound` (`wasm-host-v0_2/src/world.rs`) compare maintenant les deux noms sur leurs seuls caracteres alphanumeriques (`entity.generic.explode` et `EntityGenericExplode`), via une table construite une fois depuis `Sound::slice()`. Utilise par `World::play_sound`, `Player::play_sound`, `play_sound_at` et `stop_sound`. Un son sans correspondance est ignore avec un avertissement, sans trapper.
+- Pourquoi : tout plugin qui appelait `play-sound` perdait son instance au premier appel (constate au banc Moutrun-rs, `entity.generic.explode`).
+- Fichiers : `crates/pumpkin-wasm-host-v0_2/src/world.rs` (helper + tests : un son de chaque categorie, unicite des noms normalises), `player.rs`.
+- Limites : la signature WIT est inchangee (`play-sound` ne renvoie pas de resultat) : un son inconnu est silencieux cote plugin.
+- Proposable upstream : oui (a verifier d'abord si upstream l'a deja corrige), a condition de l'ouvrir via l'utilisateur.
+
+### Patch 9 : `custom_name` style sur le reseau
+
+- Quoi : `CustomNameImpl::serialize` aplatissait le composant en texte (`get_text()`) : le client recevait une chaine brute, sans gras ni couleur, et en italique par defaut. Il l'encode maintenant avec `encode_for_version(V_26_2)`, comme `LoreImpl`. Le hash (`basic.rs`) reste celui du texte, comme pour le lore.
+- Pourquoi : les noms d'objets des modes (ex. le lit du lobby : `<bold><red>Retour au Spawn</red></bold> ...`) perdaient leurs styles.
+- Fichiers : `crates/pumpkin-protocol/src/codec/data_component.rs` (+ test `custom_name_keeps_its_styles_on_the_wire` : un nom gras et rouge relu par `deserialize` garde ses styles).
+- Limites : le defaut italique du client reste pour un nom sans `italic:false` explicite (a poser cote mode).
+- Proposable upstream : oui (sans dependance Gaspezia), a condition de l'ouvrir via l'utilisateur.
+
+### Patch 10 : interpolation d'un display toujours envoyee
+
+- Quoi : `SynchedEntityData::set` ne marque un champ sale que si sa valeur change. `SynchedEntityData::set_forced` (et `Entity::set_synced_data_forced`) le marque toujours, comme le `force=true` de vanilla (`Display.setTransformationInterpolationDelay`). `DisplayEntity::set_interpolation_start_delta_ticks` l'utilise.
+- Pourquoi : le client ne relance l'interpolation d'un display qu'a la reception de ce champ ; sans cela, une animation envoyee avec `delay=0` et `duration=n` saute d'une pose a l'autre au lieu d'etre lissee.
+- Fichiers : `crates/pumpkin-core/src/entity/synched_entity_data.rs` (+ test `set_forced_marks_dirty_even_when_unchanged`), `entity/mod.rs`, `entity/decoration/display.rs`.
+- Limites : le renvoi groupe de l'etat du display (`display.rs`, autre appel a `START_INTERPOLATION`) garde l'envoi sur changement.
+- Proposable upstream : oui (fidelite vanilla).
+
 ### Patch 11 : cause complete d'un trap de plugin
 
 - Quoi : `DriverError::new(error.to_string())` (`pumpkin-plugin-runtime/src/executor.rs`) devient `format!("{error:?}")`, et le log du scheduler (`pumpkin-wasm-host/src/scheduler.rs`) passe de `%error` a `error = ?error` : le `Debug` d'une erreur `wasmtime` garde la chaine `Caused by`.
@@ -83,4 +110,7 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-10 | base initiale (`eda69440e`) | - | - | OK en local (~28 min) |
 | 2026-11-10 | essai à blanc de `update.sh` (clone jetable, non poussé) : 16 commits upstream jusqu'à `d393d3581` | aucun | 26 min 16 s | OK ; `Cargo.lock` modifié par le build (restaurer avant le prochain `update.sh`, qui exige un arbre propre) |
 | 2026-11-16 | `upstream/master` @ `2285efe83` (89 commits depuis `eda69440e`) + tete de la PR #3962 `cc9102bd2` ; avance du 25/11 (decision de Bastien) | 4 : `v0.2/world.wit` + `wasm-host-v0_2/src/world.rs` (upstream a ajoute le meme `get-loaded-chunk-count` : version upstream gardee) ; `pumpkin-core/src/world/mod.rs` (patch 3 reinsere apres la reorganisation de `spawn_java_player`, #3708) ; `Cargo.lock` (`pumpkin-plugin-helpers` retire par la PR #3962) | verification 14 min 17 s (debug, sans LTO) | clippy + tests `pumpkin-wasm-host-v0_2` (19) OK ; `cargo check -p pumpkin --features plugin-v0_2` OK ; gapi-rs : clippy wasm OK contre le nouveau SDK |
+| 2026-11-19 | aucun (patch 8 seul, sans fusion upstream) | aucun | - | tests `pumpkin-wasm-host-v0_2` (son) OK |
+| 2026-11-19 | aucun (patch 9 seul, sans fusion upstream) | aucun | - | tests `pumpkin-protocol` OK |
+| 2026-11-19 | aucun (patch 10 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-19 | aucun (patch 11 seul, sans fusion upstream) | aucun | - | `cargo check` des crates touchees OK |

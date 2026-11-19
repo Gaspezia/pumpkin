@@ -1009,9 +1009,10 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
         pitch: f32,
     ) -> wasmtime::Result<()> {
         let world_ref = self.get(&world)?;
-        let sound_name = format!("{sound:?}").to_lowercase().replace('_', ".");
-        let sound_data = pumpkin_data::sound::Sound::from_name(&sound_name)
-            .ok_or_else(|| wasmtime::Error::msg(format!("Unknown sound: {sound_name}")))?;
+        let Some(sound_data) = from_wit_sound(sound) else {
+            tracing::warn!("play-sound: unmapped sound {sound:?}, ignored");
+            return Ok(());
+        };
 
         let internal_category = from_wit_sound_category(category);
 
@@ -2840,6 +2841,37 @@ impl pumpkin_world::generation::generator::CustomChunkGenerator for WasmChunkGen
     }
 }
 
+/// Maps a WIT `sound` variant to the internal sound.
+///
+/// The WIT variant (`Debug`: `Sound::EntityGenericExplode`) and the internal name
+/// (`entity.generic.explode`, `block.note_block.bass`) only agree once
+/// lower-cased and stripped of every non-alphanumeric character.
+#[must_use]
+pub fn from_wit_sound(sound: pumpkin::plugin::sounds::Sound) -> Option<pumpkin_data::sound::Sound> {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+    static MAP: OnceLock<HashMap<String, pumpkin_data::sound::Sound>> = OnceLock::new();
+    let map = MAP.get_or_init(sound_lookup);
+    // wasmtime's `Debug` for a WIT enum is `Sound::EntityGenericExplode`.
+    let debug = format!("{sound:?}");
+    let variant = debug.rsplit("::").next().unwrap_or(&debug);
+    map.get(&normalize_sound_name(variant)).copied()
+}
+
+fn normalize_sound_name(name: &str) -> String {
+    name.chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
+fn sound_lookup() -> std::collections::HashMap<String, pumpkin_data::sound::Sound> {
+    pumpkin_data::sound::Sound::slice()
+        .iter()
+        .map(|s| (normalize_sound_name(s.to_name()), *s))
+        .collect()
+}
+
 #[must_use]
 pub const fn from_wit_sound_category(
     category: pumpkin::plugin::sounds::SoundCategory,
@@ -2938,6 +2970,33 @@ fn build_fireworks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wit_sound_maps_one_per_category() {
+        use pumpkin::plugin::sounds::Sound as W;
+        use pumpkin_data::sound::Sound as S;
+        let cases = [
+            (W::EntityGenericExplode, S::EntityGenericExplode),
+            (W::AmbientCave, S::AmbientCave),
+            (W::BlockNoteBlockBass, S::BlockNoteBlockBass),
+            (W::ItemTotemUse, S::ItemTotemUse),
+            (W::MusicDisc13, S::MusicDisc13),
+            (W::UiButtonClick, S::UiButtonClick),
+            (W::WeatherRain, S::WeatherRain),
+            (W::EntityPlayerLevelup, S::EntityPlayerLevelup),
+        ];
+        for (wit, expected) in cases {
+            assert_eq!(from_wit_sound(wit), Some(expected), "{wit:?}");
+        }
+    }
+
+    #[test]
+    fn sound_names_stay_unique_once_normalized() {
+        assert_eq!(
+            sound_lookup().len(),
+            pumpkin_data::sound::Sound::slice().len()
+        );
+    }
 
     fn explosion(shape: WitFireworkShape, n: usize) -> WitFireworkExplosion {
         WitFireworkExplosion {
