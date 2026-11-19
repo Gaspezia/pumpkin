@@ -108,6 +108,26 @@ impl SynchedEntityData {
         tracked: TrackedData,
         value: T,
     ) -> bool {
+        self.set_inner(tracked, value, false)
+    }
+
+    /// Like [`Self::set`], but marks the value dirty even when it is unchanged
+    /// (vanilla `SynchedEntityData.set(accessor, value, true)`). Needed for fields
+    /// the client reacts to on receipt, such as a display's interpolation start.
+    pub fn set_forced<T: MetadataSerializer + Clone + Send + Sync + 'static>(
+        &self,
+        tracked: TrackedData,
+        value: T,
+    ) {
+        self.set_inner(tracked, value, true);
+    }
+
+    fn set_inner<T: MetadataSerializer + Clone + Send + Sync + 'static>(
+        &self,
+        tracked: TrackedData,
+        value: T,
+        force: bool,
+    ) -> bool {
         let holder = SerializerHolder { value };
         let new_canonical = holder.write_canonical(tracked.id, tracked.r#type);
 
@@ -116,7 +136,7 @@ impl SynchedEntityData {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(item) = items.get_mut(&tracked) {
-            if item.canonical_bytes == new_canonical {
+            if item.canonical_bytes == new_canonical && !force {
                 return false;
             }
             item.canonical_bytes = new_canonical;
@@ -252,6 +272,25 @@ mod test {
             data.pack_dirty_for_version(&JavaMinecraftVersion::V_1_20_5),
             current
         );
+    }
+
+    /// A forced set is sent every time, even for an unchanged value; a plain set is not.
+    #[test]
+    fn set_forced_marks_dirty_even_when_unchanged() {
+        let data = SynchedEntityData::new();
+        data.define(PLAYER_MODE_CUSTOMISATION, 0u8);
+        let v = &JavaMinecraftVersion::V_26_3;
+
+        data.set_forced(PLAYER_MODE_CUSTOMISATION, 5u8);
+        assert!(data.pack_dirty_for_version(v).is_some());
+        data.clear_dirty();
+
+        data.set_forced(PLAYER_MODE_CUSTOMISATION, 5u8);
+        assert!(data.pack_dirty_for_version(v).is_some());
+        data.clear_dirty();
+
+        assert!(!data.set(PLAYER_MODE_CUSTOMISATION, 5u8));
+        assert!(data.pack_dirty_for_version(v).is_none());
     }
 
     /// A value still at the default the client assumes is not sent.
