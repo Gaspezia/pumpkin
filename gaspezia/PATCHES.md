@@ -77,6 +77,7 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-wasm-host-v0_2/src/world.rs` (helper + tests : un son de chaque categorie, unicite des noms normalises), `player.rs`.
 - Limites : la signature WIT est inchangee (`play-sound` ne renvoie pas de resultat) : un son inconnu est silencieux cote plugin.
 - Proposable upstream : oui (a verifier d'abord si upstream l'a deja corrige), a condition de l'ouvrir via l'utilisateur.
+
 ### Patch 9 : `custom_name` style sur le reseau
 
 - Quoi : `CustomNameImpl::serialize` aplatissait le composant en texte (`get_text()`) : le client recevait une chaine brute, sans gras ni couleur, et en italique par defaut. Il l'encode maintenant avec `encode_for_version(V_26_2)`, comme `LoreImpl`. Le hash (`basic.rs`) reste celui du texte, comme pour le lore.
