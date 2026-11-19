@@ -105,3 +105,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-19 | aucun (patch 8 seul, sans fusion upstream) | aucun | - | tests `pumpkin-wasm-host-v0_2` (son) OK |
 | 2026-11-19 | aucun (patch 9 seul, sans fusion upstream) | aucun | - | tests `pumpkin-protocol` OK |
 | 2026-11-19 | aucun (patch 10 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-19 | aucun (patch 4 : ajout de , sans fusion upstream) | aucun | - | tests  OK |
