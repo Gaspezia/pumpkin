@@ -2843,18 +2843,19 @@ impl pumpkin_world::generation::generator::CustomChunkGenerator for WasmChunkGen
 
 /// Maps a WIT `sound` variant to the internal sound.
 ///
-/// The WIT variant (`Debug`: `EntityGenericExplode`) and the internal name
+/// The WIT variant (`Debug`: `Sound::EntityGenericExplode`) and the internal name
 /// (`entity.generic.explode`, `block.note_block.bass`) only agree once
 /// lower-cased and stripped of every non-alphanumeric character.
 #[must_use]
-pub fn from_wit_sound(
-    sound: pumpkin::plugin::sounds::Sound,
-) -> Option<pumpkin_data::sound::Sound> {
+pub fn from_wit_sound(sound: pumpkin::plugin::sounds::Sound) -> Option<pumpkin_data::sound::Sound> {
     use std::collections::HashMap;
     use std::sync::OnceLock;
     static MAP: OnceLock<HashMap<String, pumpkin_data::sound::Sound>> = OnceLock::new();
     let map = MAP.get_or_init(sound_lookup);
-    map.get(&normalize_sound_name(&format!("{sound:?}"))).copied()
+    // wasmtime's `Debug` for a WIT enum is `Sound::EntityGenericExplode`.
+    let debug = format!("{sound:?}");
+    let variant = debug.rsplit("::").next().unwrap_or(&debug);
+    map.get(&normalize_sound_name(variant)).copied()
 }
 
 fn normalize_sound_name(name: &str) -> String {

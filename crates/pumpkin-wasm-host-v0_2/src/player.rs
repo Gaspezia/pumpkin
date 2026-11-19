@@ -1471,9 +1471,8 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         category: Option<pumpkin::plugin::sounds::SoundCategory>,
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
-        let sound_rl = sound.and_then(|s| {
-            super::world::from_wit_sound(s).map(|s| s.to_name().into())
-        });
+        let sound_rl =
+            sound.and_then(|s| super::world::from_wit_sound(s).map(|s| s.to_name().into()));
         let cat = category.map(super::world::from_wit_sound_category);
         player.stop_sound(sound_rl, cat);
         Ok(())
