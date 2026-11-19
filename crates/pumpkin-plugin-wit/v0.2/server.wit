@@ -155,6 +155,10 @@ interface server {
         available-cpus: option<u32>,
         /// Resident set size of the server process, in bytes.
         memory-rss: option<u64>,
+        /// Working set of the server's cgroup, in bytes: the usage minus the inactive file cache
+        /// (cgroup v2 `memory.current` - `inactive_file`; v1 `memory.usage_in_bytes` -
+        /// `total_inactive_file`). This is what kubelet and `kubectl top` report. `none` outside a cgroup.
+        memory-working-set: option<u64>,
         /// Memory limit of the server's cgroup, in bytes (`none` when unlimited or unknown).
         memory-limit: option<u64>,
     }

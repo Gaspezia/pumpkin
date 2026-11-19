@@ -88,6 +88,7 @@ impl pumpkin::plugin::server::HostServer for PluginHostState {
             cpu_time_ms: usage.filter(|_| cpu).map(|(cpu_ms, _)| cpu_ms),
             available_cpus: cpu.then(available_cpus),
             memory_rss: usage.filter(|_| ram).map(|(_, rss)| rss),
+            memory_working_set: ram.then(cgroup_working_set).flatten(),
             memory_limit: ram.then(cgroup_memory_limit).flatten(),
         })
     }
@@ -1261,6 +1262,30 @@ fn cgroup_memory_limit() -> Option<u64> {
     )
 }
 
+/// Working set of the cgroup: v2 `memory.current` - `inactive_file` (`memory.stat`), else
+/// v1 `memory.usage_in_bytes` - `total_inactive_file`. `None` outside a cgroup.
+fn cgroup_working_set() -> Option<u64> {
+    let read = |path: &str| std::fs::read_to_string(path).ok();
+    if let Some(usage) = read("/sys/fs/cgroup/memory.current") {
+        return working_set(&usage, &read("/sys/fs/cgroup/memory.stat")?, "inactive_file");
+    }
+    working_set(
+        &read("/sys/fs/cgroup/memory/memory.usage_in_bytes")?,
+        &read("/sys/fs/cgroup/memory/memory.stat")?,
+        "total_inactive_file",
+    )
+}
+
+/// `usage` minus the `inactive_key` line of a `memory.stat` (saturating at 0).
+fn working_set(usage: &str, stat: &str, inactive_key: &str) -> Option<u64> {
+    let usage = usage.trim().parse::<u64>().ok()?;
+    let inactive = stat.lines().find_map(|line| {
+        let (key, value) = line.split_once(' ')?;
+        (key == inactive_key).then(|| value.trim().parse::<u64>().ok())?
+    })?;
+    Some(usage.saturating_sub(inactive))
+}
+
 /// A byte count; `max` (v2) and the huge "unlimited" value of v1 (about 2^63) mean no limit.
 fn parse_memory_limit(content: &str) -> Option<u64> {
     content
@@ -1272,7 +1297,7 @@ fn parse_memory_limit(content: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cpu_quota, parse_cpu_max, parse_memory_limit};
+    use super::{cpu_quota, parse_cpu_max, parse_memory_limit, working_set};
 
     #[test]
     fn cgroup_cpu_quota_is_rounded_up() {
@@ -1289,6 +1314,18 @@ mod tests {
         assert_eq!(parse_memory_limit("1073741824\n"), Some(1_073_741_824));
         assert_eq!(parse_memory_limit("max\n"), None);
         assert_eq!(parse_memory_limit("9223372036854771712"), None);
+    }
+
+    #[test]
+    fn working_set_subtracts_inactive_file() {
+        let v2 = "anon 100\nfile 900\ninactive_anon 5\ninactive_file 300\nactive_file 600\n";
+        assert_eq!(working_set("1000\n", v2, "inactive_file"), Some(700));
+        // `total_inactive_file` (v1) must not match the v2 key and vice versa.
+        let v1 = "cache 900\ninactive_file 1\ntotal_inactive_file 250\n";
+        assert_eq!(working_set("1000", v1, "total_inactive_file"), Some(750));
+        assert_eq!(working_set("100", v2, "inactive_file"), Some(0));
+        assert_eq!(working_set("1000", "anon 1\n", "inactive_file"), None);
+        assert_eq!(working_set("max", v2, "inactive_file"), None);
     }
 
     #[cfg(target_os = "linux")]
