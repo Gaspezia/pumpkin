@@ -1267,7 +1267,11 @@ fn cgroup_memory_limit() -> Option<u64> {
 fn cgroup_working_set() -> Option<u64> {
     let read = |path: &str| std::fs::read_to_string(path).ok();
     if let Some(usage) = read("/sys/fs/cgroup/memory.current") {
-        return working_set(&usage, &read("/sys/fs/cgroup/memory.stat")?, "inactive_file");
+        return working_set(
+            &usage,
+            &read("/sys/fs/cgroup/memory.stat")?,
+            "inactive_file",
+        );
     }
     working_set(
         &read("/sys/fs/cgroup/memory/memory.usage_in_bytes")?,
