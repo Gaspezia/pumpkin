@@ -1360,6 +1360,29 @@ impl World {
         }
     }
 
+    /// Spawns a particle with its already-encoded option bytes (dust colour, block state...).
+    pub fn spawn_particle_with_data(
+        &self,
+        particle: Particle,
+        position: Vector3<f64>,
+        offset: Vector3<f32>,
+        max_speed: f32,
+        particle_count: i32,
+        data: &[u8],
+    ) {
+        let packet = CParticle::new(
+            false,
+            false,
+            position,
+            offset,
+            max_speed,
+            particle_count,
+            (particle.to_id() as i32).into(),
+            data,
+        );
+        self.broadcast_packet_all(&packet);
+    }
+
     /// Spawns `minecraft:block` particles textured like the given block state.
     pub fn spawn_block_particle(
         &self,
