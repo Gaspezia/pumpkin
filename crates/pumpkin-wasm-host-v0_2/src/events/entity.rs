@@ -109,6 +109,8 @@ impl ToFromWasmEvent for EntityDamageEvent {
             entity_id: self.entity_id,
             damage: self.damage,
             damage_type: to_wit_damage_type(&self.damage_type),
+            final_damage: self.final_damage,
+            health: self.health,
             cancelled: self.cancelled,
         })
     }
@@ -119,6 +121,8 @@ impl ToFromWasmEvent for EntityDamageEvent {
                 entity_id: data.entity_id,
                 damage: data.damage,
                 damage_type: from_wit_damage_type(data.damage_type),
+                final_damage: data.final_damage,
+                health: data.health,
                 cancelled: data.cancelled,
             },
             _ => panic!("unexpected event type"),
@@ -869,6 +873,8 @@ impl ToFromWasmEvent for EntityDamageByEntityEvent {
         }
     }
 
+            final_damage: self.final_damage,
+            health: self.health,
     fn from_wasm_event(event: Event, _state: &mut PluginHostState) -> Self {
         match event {
             Event::EntityDamageByEntityEvent(data) => Self {
@@ -888,6 +894,8 @@ impl ToFromWasmEvent for EntityDropItemEvent {
         Event::EntityDropItemEvent(EntityDropItemEventData {
             entity_id: self.entity_id,
             item_name: self.item_name.clone(),
+                final_damage: data.final_damage,
+                health: data.health,
             count: self.count,
             cancelled: self.cancelled,
         })

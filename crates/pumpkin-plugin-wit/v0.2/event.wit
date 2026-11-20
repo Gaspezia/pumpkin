@@ -460,6 +460,11 @@ interface event {
         entity-id: s32,
         damage: f32,
         damage-type: damage-type,
+        /// Damage taken off the victim's health after armor, resistance, protection
+        /// enchantments and absorption (read-only: change `damage` to alter the hit).
+        final-damage: f32,
+        /// Victim's health when the hit lands (0 for non-living entities).
+        health: f32,
         cancelled: bool
     }
 
@@ -664,6 +669,11 @@ interface event {
 
     record entity-drop-item-event-data {
         entity-id: s32,
+        /// Damage taken off the victim's health after armor, resistance, protection
+        /// enchantments and absorption (read-only: change `damage` to alter the hit).
+        final-damage: f32,
+        /// Victim's health when the hit lands.
+        health: f32,
         item-name: string,
         count: u8,
         cancelled: bool

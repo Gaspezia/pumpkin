@@ -3850,6 +3850,19 @@ impl LivingEntity {
             damage,
             caller.hurt_gear_slots(GearDamage::Armor),
         );
+        self.armor_reduced_damage(damage, damage_type, attacker)
+    }
+
+    /// The armor reduction of [`Self::get_damage_after_armor_absorb`], without wearing the armor down.
+    fn armor_reduced_damage(
+        &self,
+        damage: f32,
+        damage_type: &DamageType,
+        attacker: Option<&dyn EntityBase>,
+    ) -> f32 {
+        if damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_ARMOR) {
+            return damage;
+        }
         let armor = self.get_attribute_value(&Attributes::ARMOR).floor() as f32;
         let toughness = self.get_attribute_value(&Attributes::ARMOR_TOUGHNESS) as f32;
 
@@ -3870,10 +3883,22 @@ impl LivingEntity {
     /// Calculates damage after magic/resistance/enchantment reduction, mirroring vanilla `LivingEntity.getDamageAfterMagicAbsorb`.
     pub fn get_damage_after_magic_absorb(
         &self,
+        damage: f32,
+        damage_type: &DamageType,
+        caller: &dyn EntityBase,
+        cause: Option<&dyn EntityBase>,
+    ) -> f32 {
+        self.magic_reduced_damage(damage, damage_type, caller, cause, true)
+    }
+
+    /// [`Self::get_damage_after_magic_absorb`]; `record_stats` false makes it a pure preview.
+    fn magic_reduced_damage(
+        &self,
         mut damage: f32,
         damage_type: &DamageType,
         caller: &dyn EntityBase,
         cause: Option<&dyn EntityBase>,
+        record_stats: bool,
     ) -> f32 {
         if damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_EFFECTS) {
             return damage;
@@ -3889,7 +3914,7 @@ impl LivingEntity {
             let old_damage = damage;
             damage = (v / 25.0).max(0.0);
             let damage_resisted = old_damage - damage;
-            if damage_resisted > 0.0 {
+            if damage_resisted > 0.0 && record_stats {
                 if let Some(victim_player) = caller.get_player() {
                     victim_player.increment_stat(
                         StatisticCategory::Custom,
@@ -3945,6 +3970,43 @@ impl LivingEntity {
         damage
     }
 
+    /// Health a hit of `amount` would take off this entity, as `damage_with_context` computes it
+    /// (helmet, hurt cooldown, armor, resistance and enchantments, absorption), with no side effect.
+    /// Item blocking is not previewed (it can have side effects).
+    fn preview_final_damage(
+        &self,
+        caller: &dyn EntityBase,
+        amount: f32,
+        damage_type: &DamageType,
+        cause: Option<&dyn EntityBase>,
+    ) -> f32 {
+        let mut amount = amount.max(0.0);
+        if damage_type.has_tag(&tag::DamageType::MINECRAFT_DAMAGES_HELMET)
+            && !self
+                .entity_equipment
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(&EquipmentSlot::HEAD)
+                .is_empty()
+        {
+            amount *= 0.75;
+        }
+        if self.hurt_cooldown.load(Relaxed) > 10
+            && !damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_COOLDOWN)
+        {
+            let last = self.last_damage_taken.load();
+            if amount <= last {
+                return 0.0;
+            }
+            amount -= last;
+        }
+        let amount = self.armor_reduced_damage(amount, damage_type, cause);
+        let amount = self
+            .magic_reduced_damage(amount, damage_type, caller, cause, false)
+            .max(0.0);
+        (amount - self.absorption.load()).max(0.0)
+    }
+
     #[allow(clippy::too_many_lines)]
     pub fn damage_with_context(
         &self,
@@ -3974,6 +4036,10 @@ impl LivingEntity {
                 self.entity.entity_id,
                 damage_type,
                 amount,
+            )
+            .with_final_damage(
+                self.preview_final_damage(caller, amount, &damage_type, cause.or(source)),
+                self.health.load(),
             );
         if let Some(server) = self.entity.world.load().server.upgrade() {
             server
@@ -3992,6 +4058,13 @@ impl LivingEntity {
                     damager_id: damager.get_entity().entity_id,
                     damage: amount,
                     cause: format!("{damage_type:?}"),
+                    final_damage: self.preview_final_damage(
+                        caller,
+                        amount,
+                        &damage_type,
+                        Some(damager),
+                    ),
+                    health: self.health.load(),
                     cancelled: false,
                 };
             if let Some(server) = self.entity.world.load().server.upgrade() {
@@ -5469,6 +5542,7 @@ mod ai_step_tests {
     use crate::entity::mob::{Mob, MobEntity};
     use crate::entity::{Entity, EntityBase};
     use crate::world::World;
+    use pumpkin_data::damage::DamageType;
     use pumpkin_data::{attributes::Attributes, entity::EntityType};
     use pumpkin_util::math::position::BlockPos;
     use pumpkin_util::math::vector3::Vector3;
@@ -5588,6 +5662,32 @@ mod ai_step_tests {
         ));
         let other = Arc::new(probe(world.clone(), Arc::new(AtomicUsize::new(0))));
         other.get_entity().set_pos(Vector3::new(0.1, 64.0, 0.0));
+
+    #[tokio::test]
+    async fn preview_final_damage_matches_what_reaches_the_health() -> TestResult {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let mob = probe(world.clone(), Arc::new(AtomicUsize::new(0)));
+        let living = &mob.mob.living_entity;
+        living.set_absorption(4.0);
+
+        // No armor on a cow: only the absorption comes off.
+        let full = living.preview_final_damage(&mob, 10.0, &DamageType::GENERIC, None);
+        assert!((full - 6.0).abs() < 1e-4);
+
+        // Inside the hurt cooldown only the part above the last hit lands.
+        living.hurt_cooldown.store(20, Ordering::Relaxed);
+        living.last_damage_taken.store(3.0);
+        let partial = living.preview_final_damage(&mob, 10.0, &DamageType::GENERIC, None);
+        assert!((partial - 3.0).abs() < 1e-4);
+        assert!(living.preview_final_damage(&mob, 2.0, &DamageType::GENERIC, None) <= 0.0);
+
+        // A preview has no side effect.
+        assert!((living.absorption.load() - 4.0).abs() < 1e-4);
+        assert_eq!(living.hurt_cooldown.load(Ordering::Relaxed), 20);
+        world.level.shutdown().await;
+        Ok(())
+    }
         world.add_entity_silent(bat.clone());
         world.add_entity_silent(other.clone());
 
