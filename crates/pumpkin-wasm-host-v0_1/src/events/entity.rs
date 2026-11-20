@@ -389,6 +389,20 @@ impl ToFromWasmEvent
         })
     }
 
+    // v0.1 plugins know nothing of the block list: keep the one the core computed.
+    fn apply_wasm_event(&mut self, event: Event, state: &mut PluginHostState) {
+        cleanup_event(&event, state);
+        if let Event::EntityExplodeEvent(data) = event {
+            self.position = pumpkin_util::math::vector3::Vector3::new(
+                data.position.0,
+                data.position.1,
+                data.position.2,
+            );
+            self.yield_rate = data.yield_rate;
+            self.cancelled = data.cancelled;
+        }
+    }
+
     fn from_wasm_event(event: Event, _state: &mut PluginHostState) -> Self {
         match event {
             Event::EntityExplodeEvent(data) => Self {
@@ -399,6 +413,8 @@ impl ToFromWasmEvent
                     data.position.2,
                 ),
                 yield_rate: data.yield_rate,
+                blocks: Vec::new(),
+                owner_id: None,
                 cancelled: data.cancelled,
             },
             _ => panic!("unexpected event type"),
