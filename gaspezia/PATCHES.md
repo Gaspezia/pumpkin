@@ -17,6 +17,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 8 | `play-sound`, `play-sound-at` et `stop-sound` de l'hote v0.2 : correspondance fiable entre le variant WIT et `pumpkin_data::sound::Sound` (plus de trap sur tout son) | branche `gaspezia-patch/plugin-play-sound` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
 | 9 | `custom_name` d'un objet garde ses styles (gras, couleurs) a l'encodage reseau : `CustomNameImpl` encode comme `LoreImpl` | branche `gaspezia-patch/custom-name-styles` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
 | 10 | `display.set-interpolation-start` toujours renvoye au client (champ force comme vanilla) : `SynchedEntityData::set_forced` | branche `gaspezia-patch/forced-interpolation` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
+| 11 | Un trap de plugin journalise sa cause complete (chaine `Caused by`) : `DriverError` et log du scheduler en `Debug` | branche `gaspezia-patch/plugin-trap-cause` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
 
 ### Patch 3 : `player-spawn-location-event` au join
 
@@ -95,6 +96,13 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : le renvoi groupe de l'etat du display (`display.rs`, autre appel a `START_INTERPOLATION`) garde l'envoi sur changement.
 - Proposable upstream : oui (fidelite vanilla).
 
+### Patch 11 : cause complete d'un trap de plugin
+
+- Quoi : `DriverError::new(error.to_string())` (`pumpkin-plugin-runtime/src/executor.rs`) devient `format!("{error:?}")`, et le log du scheduler (`pumpkin-wasm-host/src/scheduler.rs`) passe de `%error` a `error = ?error` : le `Debug` d'une erreur `wasmtime` garde la chaine `Caused by`.
+- Pourquoi : un trap ne journalisait que `error while executing at wasm backtrace`, sans la cause, ce qui bloquait le diagnostic.
+- Fichiers : les deux ci-dessus. Journalisation seule, aucun changement de comportement.
+- Proposable upstream : oui.
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -106,3 +114,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-19 | aucun (patch 9 seul, sans fusion upstream) | aucun | - | tests `pumpkin-protocol` OK |
 | 2026-11-19 | aucun (patch 10 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-19 | aucun (patch 4 : ajout de `memory-working-set`, sans fusion upstream) | aucun | - | tests `pumpkin-wasm-host-v0_2` OK |
+| 2026-11-19 | aucun (patch 11 seul, sans fusion upstream) | aucun | - | `cargo check` des crates touchees OK |
