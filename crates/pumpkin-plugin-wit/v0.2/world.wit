@@ -486,18 +486,18 @@ interface %world {
         remove-passenger: async func(passenger: entity);
         eject-passengers: async func();
 
-        get-bounding-box: func() -> bounding-box;
-
-        is-in-water: func() -> bool;
-        is-in-lava: func() -> bool;
-        is-in-water-or-rain: func() -> bool;
-
 
         /// The entity credited for this one: shooter of a projectile, igniter of a primed TNT.
         get-owner: func() -> option<entity>;
         /// Credits `owner` for this entity. Returns false for entities with no owner notion
         /// (only projectiles and primed TNT have one).
         set-owner: func(owner: option<entity>) -> bool;
+        get-bounding-box: func() -> bounding-box;
+
+        is-in-water: func() -> bool;
+        is-in-lava: func() -> bool;
+        is-in-water-or-rain: func() -> bool;
+
         /// Returns whether this entity is still valid (alive and not removed from the world).
         is-valid: func() -> bool;
         /// Returns whether this entity has died or been removed from the world.
@@ -1114,6 +1114,9 @@ interface %world {
         /// `detonate` = true: the rocket explodes during this call (clients get spawn, metadata, entity event 17, removal).
         /// The explosion deals vanilla damage (5 + 2 x number of explosions, radius 5 blocks; same as Paper): detonate away from players.
         /// Returns `none` if an entity spawn event handler cancels the spawn.
+        /// Spawns a primed TNT at `pos` (default power) that explodes after `fuse-ticks`, credited to `owner`.
+        /// Returns `none` if an entity spawn event handler cancels the spawn.
+        spawn-primed-tnt: async func(pos: position, fuse-ticks: s32, owner: option<entity>) -> option<entity>;
         spawn-firework: async func(pos: position, flight-duration: u8, explosions: list<firework-explosion>, detonate: bool) -> option<entity>;
 
         /// Spawns a dropped item entity with the given item stack at the exact position with zero initial velocity.
@@ -1124,9 +1127,6 @@ interface %world {
 
         /// Drops an item stack at the center of the given block position with natural random offset and velocity (`World::drop_stack`).
         drop-stack: async func(pos: block-pos, item: item-stack);
-        /// Spawns a primed TNT at `pos` (default power) that explodes after `fuse-ticks`, credited to `owner`.
-        /// Returns `none` if an entity spawn event handler cancels the spawn.
-        spawn-primed-tnt: async func(pos: position, fuse-ticks: s32, owner: option<entity>) -> option<entity>;
 
         /// Spawns one or more experience orbs totaling `amount` XP at the given position.
         spawn-experience-orb: async func(pos: position, amount: u32);

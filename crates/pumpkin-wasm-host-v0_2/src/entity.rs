@@ -412,19 +412,6 @@ impl HostEntity for PluginHostState {
         }
     }
 
-    fn get_passengers(
-        &mut self,
-        entity: Resource<Entity>,
-    ) -> wasmtime::Result<Vec<Resource<Entity>>> {
-        let entity = self.get(&entity)?.clone();
-        let passengers = entity.get_entity().passengers.lock_ignore_poison();
-        let mut result = Vec::new();
-        for p in passengers.iter() {
-            result.push(
-                self.add(Arc::clone(p))
-                    .map_err(|_| wasmtime::Error::msg("failed to add entity resource"))?,
-            );
-        }
 
     fn get_owner(
         &mut self,
@@ -449,6 +436,19 @@ impl HostEntity for PluginHostState {
         let owner = owner.map(|owner| self.take(owner)).transpose()?;
         Ok(entity.set_owner_entity(owner.as_ref().map(|owner| owner.get_entity())))
     }
+    fn get_passengers(
+        &mut self,
+        entity: Resource<Entity>,
+    ) -> wasmtime::Result<Vec<Resource<Entity>>> {
+        let entity = self.get(&entity)?.clone();
+        let passengers = entity.get_entity().passengers.lock_ignore_poison();
+        let mut result = Vec::new();
+        for p in passengers.iter() {
+            result.push(
+                self.add(Arc::clone(p))
+                    .map_err(|_| wasmtime::Error::msg("failed to add entity resource"))?,
+            );
+        }
         Ok(result)
     }
 
