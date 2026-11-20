@@ -237,8 +237,7 @@ impl HostInventory for PluginHostState {
     ) -> wasmtime::Result<u32> {
         let provider = self.get(&res)?;
         let mut total = 0u32;
-        let is_matching =
-            |key: &str| key == item_id || key.strip_prefix("minecraft:") == Some(&item_id);
+        let is_matching = |key: &str| item_id_matches(key, &item_id);
         match provider {
             InventoryProvider::Generic(inv) => {
                 for slot in 0..inv.size() {
@@ -1245,5 +1244,19 @@ impl HostPlayerInventoryWithStore<PluginHostState> for HasSelf<PluginHostState> 
         Self::clear_armor(accessor, Resource::new_borrow(res.rep())).await?;
         Self::set_off_hand(accessor, Resource::new_borrow(res.rep()), None).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod item_id_tests {
+    use super::item_id_matches;
+
+    #[test]
+    fn item_ids_match_with_or_without_namespace() {
+        for id in ["iron_ingot", "minecraft:iron_ingot"] {
+            assert!(item_id_matches("iron_ingot", id));
+            assert!(item_id_matches("minecraft:iron_ingot", id));
+            assert!(!item_id_matches("gold_ingot", id));
+        }
     }
 }
