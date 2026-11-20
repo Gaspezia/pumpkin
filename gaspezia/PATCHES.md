@@ -14,6 +14,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
+| 24 | `entity.get-owner` / `set-owner` et `world.spawn-primed-tnt` | branche `gaspezia-patch/entity-owner` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -171,6 +172,15 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : le retrait/renvoi de la tab list n'est fait que pour les clients Java ; un joueur cache qui rejoint apres coup, ou change de monde, reste soumis au filtre du suivi mais sa ligne de tab list peut reapparaitre. Pas de test de bout en bout (aucun joueur factice dans le cœur).
 - Proposable upstream : oui.
 
+
+### Patch 24 : proprietaire d'une entite et TNT amorcee
+
+- Quoi : `entity.get-owner() -> option<entity>` et `entity.set-owner(option<entity>) -> bool` (projectiles et TNT amorcee ; faux pour les autres entites), `world.spawn-primed-tnt(pos, fuse-ticks, owner) -> option<entity>`. Cote cœur : `EntityBase::set_owner_entity`, `ProjectileOwner::set_owner`, `get_owner_entity` implemente pour `TNTEntity`.
+- Pourquoi : BedWars credite les morts par TNT, boule de feu ou fleche a leur proprietaire (`TNTPrimed.getSource`, `Projectile.getShooter`) ; le mode tenait une table id -> uuid, aveugle aux fleches.
+- Fichiers : `crates/pumpkin-core/src/entity/mod.rs`, `tnt.rs`, `projectile/owner.rs`, `crates/pumpkin-plugin-wit/v0.2/world.wit`, `crates/pumpkin-wasm-host-v0_2/src/entity.rs` et `world.rs`.
+- Limites : pas de test automatique ; `spawn-primed-tnt` utilise la puissance par defaut (4) et ne lui donne pas de vitesse initiale ; un `EntitySpawnEvent` annule renvoie `none`.
+- Proposable upstream : oui.
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -190,3 +200,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 15 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 16 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 18 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 24 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |

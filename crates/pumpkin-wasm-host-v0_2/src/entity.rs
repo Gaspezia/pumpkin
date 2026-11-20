@@ -425,6 +425,30 @@ impl HostEntity for PluginHostState {
                     .map_err(|_| wasmtime::Error::msg("failed to add entity resource"))?,
             );
         }
+
+    fn get_owner(
+        &mut self,
+        entity: Resource<Entity>,
+    ) -> wasmtime::Result<Option<Resource<Entity>>> {
+        let entity = self.get(&entity)?.clone();
+        if let Some(owner) = entity.get_owner_entity() {
+            Ok(Some(self.add(owner).map_err(|_| {
+                wasmtime::Error::msg("failed to add entity resource")
+            })?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn set_owner(
+        &mut self,
+        entity: Resource<Entity>,
+        owner: Option<Resource<Entity>>,
+    ) -> wasmtime::Result<bool> {
+        let entity = self.get(&entity)?.clone();
+        let owner = owner.map(|owner| self.take(owner)).transpose()?;
+        Ok(entity.set_owner_entity(owner.as_ref().map(|owner| owner.get_entity())))
+    }
         Ok(result)
     }
 

@@ -1576,6 +1576,40 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         accessor.add_res(entity)
     }
 
+    async fn spawn_primed_tnt(
+        accessor: &Accessor<PluginHostState, Self>,
+        world: Resource<World>,
+        pos: WitPosition,
+        fuse_ticks: i32,
+        owner: Option<Resource<pumpkin::plugin::world::Entity>>,
+    ) -> wasmtime::Result<Option<Resource<pumpkin::plugin::world::Entity>>> {
+        let (world, owner) = accessor.with(|mut host| -> wasmtime::Result<_> {
+            let state = host.get();
+            let world = world_from_state(state, &world)?;
+            let owner = owner.map(|owner| state.take(owner)).transpose()?;
+            Ok((world, owner))
+        })?;
+        let pos = pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2);
+        let tnt = Arc::new(pumpkin_core::entity::tnt::TNTEntity::new(
+            pumpkin_core::entity::Entity::new(
+                Arc::clone(&world),
+                pos,
+                &pumpkin_data::entity::EntityType::TNT,
+            ),
+            pumpkin_core::entity::tnt::TNTEntity::DEFAULT_POWER,
+            fuse_ticks.max(0) as u32,
+        ));
+        tnt.owner
+            .set_uuid(owner.as_ref().map(|owner| owner.get_entity().entity_uuid));
+        let spawned: Arc<dyn pumpkin_core::entity::EntityBase> = tnt;
+        let entity = Arc::clone(&spawned);
+        let ok = run_blocking(accessor, move || world.spawn_entity(spawned)).await?;
+        if !ok {
+            return Ok(None);
+        }
+        Ok(Some(accessor.add_res(entity)?))
+    }
+
     async fn spawn_firework(
         accessor: &Accessor<PluginHostState, Self>,
         world: Resource<World>,

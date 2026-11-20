@@ -359,6 +359,15 @@ pub trait EntityBase: Send + Sync + std::any::Any {
             .get(&self.get_entity().world.load())
     }
 
+    /// Credits `owner` for this entity (shooter of a projectile, igniter of a primed TNT).
+    /// Returns false for entities that have no owner notion.
+    fn set_owner_entity(&self, owner: Option<&Entity>) -> bool {
+        self.get_projectile_owner().is_some_and(|projectile| {
+            projectile.set_owner(owner);
+            true
+        })
+    }
+
     fn get_eye_pos(&self) -> Vector3<f64> {
         self.get_entity().get_eye_pos()
     }
