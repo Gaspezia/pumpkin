@@ -21,6 +21,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 23 | `entity-explode-event` porte les blocs a detruire (reductibles) et le proprietaire | branche `gaspezia-patch/explosion-blocks` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 24 | `entity.get-owner` / `set-owner` et `world.spawn-primed-tnt` | branche `gaspezia-patch/entity-owner` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 25 | `player.launch-fireball` (puissance, incendiaire, vitesse) | branche `gaspezia-patch/launch-fireball` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 26 | `projectile-launch-event` pour tous les projectiles lances (perle, boule de neige, boule de feu...) | branche `gaspezia-patch/projectile-launch-all` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -227,6 +228,13 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-core/src/entity/projectile/fireball.rs`, `crates/pumpkin-plugin-wit/v0.2/player.wit`, `crates/pumpkin-wasm-host-v0_2/src/player.rs`.
 - Limites : `launch-projectile` reste un stub renvoyant `none` ; pas de test automatique ; l'explosion de la boule garde l'interaction `Mob` (regle `mobGriefing`).
 - Proposable upstream : oui (apres le patch 13, dont il depend pour le feu).
+### Patch 26 : `projectile-launch-event` pour tous les projectiles lances
+
+- Quoi : `ThrownItemEntity::owned` (point commun de la perle, de la boule de neige, de l'oeuf, des potions, de la boule de feu, du crâne de wither...) tire `ProjectileLaunchEvent` avec le tireur. La fleche et le trident tiraient deja le leur.
+- Pourquoi : BedWars compte les perles lancees (`pearlsThrown`) ; l'evenement ne tirait que pour fleche et trident.
+- Fichiers : `crates/pumpkin-core/src/entity/projectile/mod.rs`.
+- Limites : l'entite n'est pas encore apparue : `cancelled` n'est pas lu (comme pour la fleche) ; tire aussi pour les tirs de mobs (blaze, ghast) comme Paper ; pas de test unitaire.
+- Proposable upstream : oui.
 
 ## Journal des mises a jour
 
@@ -254,3 +262,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 23 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 24 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 25 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 26 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |

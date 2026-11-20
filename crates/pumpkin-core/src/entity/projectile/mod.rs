@@ -81,6 +81,18 @@ impl ThrownItemEntity {
     /// Keeps the position `entity` already has.
     #[must_use]
     pub fn owned(entity: Entity, owner: &Entity, gravity: f64) -> Self {
+        // Every shot goes through here (pearls, snowballs, fireballs, potions...); the arrow
+        // and the trident fire their own. The entity is not spawned yet, so `cancelled` is not read.
+        let mut launch_event =
+            crate::plugin::api::events::entity::projectile_launch::ProjectileLaunchEvent::new(
+                entity.entity_id,
+                Some(owner.entity_id),
+            );
+        if let Some(server) = entity.world.load().server.upgrade() {
+            server
+                .plugin_manager
+                .fire_blocking(&server, &mut launch_event);
+        }
         Self {
             entity,
             owner: owner::ProjectileOwner::new(Some(owner)),
