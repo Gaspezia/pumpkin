@@ -486,11 +486,18 @@ interface %world {
         remove-passenger: async func(passenger: entity);
         eject-passengers: async func();
 
+        /// Returns whether this entity is currently leashed to another entity.
+        is-leashed: func() -> bool;
+        /// Returns the entity this entity is leashed to, if any.
+        get-leash-holder: func() -> option<entity>;
+        /// Returns all entities currently leashed to this entity.
+        get-leashed-entities: func() -> list<entity>;
         get-bounding-box: func() -> bounding-box;
 
         is-in-water: func() -> bool;
         is-in-lava: func() -> bool;
         is-in-water-or-rain: func() -> bool;
+
 
         /// Returns whether this entity is still valid (alive and not removed from the world).
         is-valid: func() -> bool;
@@ -686,6 +693,9 @@ interface %world {
     record raycast-result {
         /// The block position that was hit.
         pos: block-pos,
+
+        /// Sets the entity this mob is leashed to, or clears the leash when `none` is passed.
+        set-leash-holder: func(holder: option<entity>);
         /// The face of the block that was hit.
         face: block-direction,
     }
@@ -1117,6 +1127,7 @@ interface %world {
         drop-item-naturally: async func(pos: position, item: item-stack) -> entity;
 
         /// Drops an item stack at the center of the given block position with natural random offset and velocity (`World::drop_stack`).
+
         drop-stack: async func(pos: block-pos, item: item-stack);
 
         /// Spawns one or more experience orbs totaling `amount` XP at the given position.

@@ -412,6 +412,19 @@ impl HostEntity for PluginHostState {
         }
     }
 
+    fn get_leash_holder(
+        &mut self,
+        entity: Resource<Entity>,
+    ) -> wasmtime::Result<Option<Resource<Entity>>> {
+        let entity = self.get(&entity)?.clone();
+        if let Some(holder) = entity.get_entity().get_leash_holder() {
+            Ok(Some(self.add(holder).map_err(|_| {
+                wasmtime::Error::msg("failed to add entity resource")
+            })?))
+        } else {
+            Ok(None)
+        }
+    }
     fn get_passengers(
         &mut self,
         entity: Resource<Entity>,
@@ -436,6 +449,44 @@ impl HostEntity for PluginHostState {
             max: to_wasm_position(bb.max),
         })
     }
+
+    fn get_leashed_entities(
+        &mut self,
+        entity: Resource<Entity>,
+    ) -> wasmtime::Result<Vec<Resource<Entity>>> {
+        let holder = self.get(&entity)?.clone();
+        let holder_id = holder.get_entity().entity_id;
+        let world = holder.get_entity().world.load_full();
+        let mut candidates: Vec<Arc<dyn pumpkin_core::entity::EntityBase>> =
+            world.entities.load().iter().cloned().collect();
+        candidates.extend(
+            world
+                .players
+                .load()
+                .iter()
+                .map(|player| Arc::clone(player) as Arc<dyn pumpkin_core::entity::EntityBase>),
+        );
+        let mut result = Vec::new();
+        for candidate in candidates {
+            let leashed_to_holder = candidate
+                .get_entity()
+                .get_leash_holder()
+                .is_some_and(|current| current.get_entity().entity_id == holder_id);
+            if leashed_to_holder {
+                result.push(
+                    self.add(candidate)
+                        .map_err(|_| wasmtime::Error::msg("failed to add entity resource"))?,
+                );
+            }
+        }
+        Ok(result)
+    }
+
+    fn is_leashed(&mut self, entity: Resource<Entity>) -> wasmtime::Result<bool> {
+        let entity = self.get(&entity)?;
+        Ok(entity.get_entity().is_leashed())
+    }
+
 
     fn is_in_water(&mut self, entity: Resource<Entity>) -> wasmtime::Result<bool> {
         let entity = self.get(&entity)?;
