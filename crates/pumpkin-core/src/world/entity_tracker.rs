@@ -499,17 +499,28 @@ impl TrackedEntity {
                 {
                     return;
                 }
-                let inserted = self
-                    .seen_by
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .insert(player.gameprofile.id, player.clone())
-                    .is_none();
+                // Re-read the hidden list under the write lock: `hide_player` may have run
+                // since `broadcast_to_player` above, and its `remove_player` would then find
+                // nothing to remove and the spawn below would leak.
+                let inserted = {
+                    let mut seen_by = self
+                        .seen_by
+                        .write()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    self.broadcast_to_player(player)
+                        && seen_by
+                            .insert(player.gameprofile.id, player.clone())
+                            .is_none()
+                };
                 if inserted {
                     if matches!(player.client.as_ref(), ClientPlatform::Bedrock(_)) {
                         self.bedrock_watchers.fetch_add(1, Relaxed);
                     }
                     self.add_pairing(player);
+                    // Hidden between the insert and the spawn: take the entity back.
+                    if !self.broadcast_to_player(player) {
+                        self.remove_player(player);
+                    }
                 }
                 return;
             }
