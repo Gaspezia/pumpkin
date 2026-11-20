@@ -23,6 +23,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 25 | `player.launch-fireball` (puissance, incendiaire, vitesse) | branche `gaspezia-patch/launch-fireball` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 26 | `projectile-launch-event` pour tous les projectiles lances (perle, boule de neige, boule de feu...) | branche `gaspezia-patch/projectile-launch-all` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 27 | Combat PvP 1.8, lot 1 (activation) : `[pvp] combat = "legacy_1_8"` et `World::combat_mode()` ; aucun changement de comportement | branche `gaspezia-patch/pvp18-activation` | aucune (propre au fork) | PR Gaspezia/pumpkin (PvP 1.8, lot 1) | 2026-11-20 |
+| 28 | Combat PvP 1.8, lot 1 (melee) : `Player::attack_legacy` (sans recharge ni balayage ni son d'attaque, table d'armes 1.8, Force/Faiblesse, Tranchant/Chatiment/Fleau, critique en sprint, animations 4 et 5, epuisement 0,3, jauge d'attaque masquee) et `entity/combat_legacy.rs` (fonctions pures testees contre les vecteurs) | branche `gaspezia-patch/pvp18-melee` | aucune (propre au fork) | PR Gaspezia/pumpkin (PvP 1.8, lot 1) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -244,6 +245,13 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-config/src/pvp.rs`, `lib.rs`, `crates/pumpkin-core/src/world/mod.rs`. WIT inchangee.
 - Limites : portee serveur entier, pas par monde. Propre au fork (jamais propose upstream).
 
+### Patch 28 : melee 1.8
+
+- Quoi : quand `[pvp] combat = "legacy_1_8"` (patch 27), `Player::attack` passe a `attack_legacy` (`entity/player/attack_legacy.rs`) : aucune recharge (ni garde `minimum_attack_charge`), aucun balayage, aucun son d'attaque ; valeur d'attaque de l'outil tenu prise dans la table 1.8 (epee 4 + materiau, hache 3 +, pioche 2 +, pelle 1 +, or comme le bois ; ajoutee a la base 1,0) tant que le plugin n'a pas redefini les `attribute_modifiers` de la pile ; Force = `x (1 + 1,3 (niv))` et Faiblesse = `- 0,5 (niv)` avant les multiplicateurs ; critique 1.8 (chute, ni au sol, ni echelle, ni eau, ni Cecite, ni monture, cible vivante ; le sprint n'empeche pas) a `x 1,5` AVANT l'ajout des enchantements ; Tranchant 1,25, Chatiment et Fleau 2,5 par niveau ; animations de critique 4 (physique) et 5 (magique, si enchantement) envoyees apres la vitesse de la victime ; epuisement 0,3 ; la base `attack_speed` du joueur est poussee a 1024 (tick du joueur) pour que le client n'affiche plus la jauge. Les formules sont des fonctions pures dans `entity/combat_legacy.rs`, testees contre les vecteurs D1 a D4 de la spec.
+- Pourquoi : Arena rejoue le PvP 1.8 ; le moderne divise les degats par la recharge et n'a ni les memes valeurs d'armes ni les memes enchantements.
+- Fichiers : `crates/pumpkin-core/src/entity/combat_legacy.rs` (nouveau), `entity/player/attack_legacy.rs` (nouveau), aiguillage de 5 lignes dans `Player::attack`, une ligne dans le tick du joueur, `entity/mod.rs`. Les formules viennent des faits du jeu 1.8 (aucun code Mojang copie).
+- Limites : invulnerabilite, armure 1.8, blocage et projectiles restent ceux du moderne (lots L4 a L7) ; Aura de feu via `on_post_attack` moderne (sans le `setFire(1)` prealable) ; masse, lance, trident et netherite gardent leurs valeurs modernes ; pas de test d'integration (monde complet requis), le banc Mineflayer verifiera.
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -272,3 +280,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 25 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 26 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 27 seul, sans fusion upstream) | aucun | - | tests `pumpkin-config` OK |
+| 2026-11-20 | aucun (patch 28 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` `combat_legacy` OK |

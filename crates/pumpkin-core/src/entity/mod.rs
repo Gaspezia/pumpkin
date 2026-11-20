@@ -112,6 +112,7 @@ pub mod weak_slot;
 pub use lightning::LightningBoltEntity;
 
 pub(crate) mod combat;
+pub mod combat_legacy;
 pub mod predicate;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
