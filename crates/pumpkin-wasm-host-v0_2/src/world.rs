@@ -1537,7 +1537,7 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         world: Resource<World>,
         pos: pumpkin::plugin::common::Position,
         power: f32,
-        _create_fire: bool,
+        create_fire: bool,
         interaction: pumpkin::plugin::world::ExplosionInteraction,
     ) -> wasmtime::Result<()> {
         let world = accessor.with(|mut host| world_from_state(host.get(), &world))?;
@@ -1549,7 +1549,10 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
             pumpkin::plugin::world::ExplosionInteraction::Trigger => ExplosionInteraction::Trigger,
         };
         let pos = pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2);
-        run_blocking(accessor, move || world.explode(pos, power, interaction)).await
+        run_blocking(accessor, move || {
+            world.explode_with_fire(pos, power, interaction, create_fire);
+        })
+        .await
     }
 
     async fn spawn_entity(

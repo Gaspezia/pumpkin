@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pumpkin_data::{
-    Block, BlockState, BlockStateId,
+    Block, BlockDirection, BlockState, BlockStateId,
     attributes::Attributes,
     damage::DamageType,
     entity::EntityType,
@@ -15,7 +15,11 @@ use pumpkin_world::chunk::ChunkData;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    block::{ExplodeArgs, drop_loot},
+    block::{
+        ExplodeArgs,
+        blocks::fire::{fire::FireBlock, soul_fire::SoulFireBlock},
+        drop_loot,
+    },
     entity::{Entity, EntityBase, projectile::is_redirectable, tnt::TNTEntity},
     world::loot::LootContextParameters,
 };
@@ -192,6 +196,8 @@ pub struct Explosion<'a> {
     large_particle: Particle,
     sound: Sound,
     from_wind_charge: bool,
+    /// Vanilla `fire`: scatter fire over the crater of a block-destroying explosion.
+    create_fire: bool,
 }
 
 impl<'a> Explosion<'a> {
@@ -211,6 +217,7 @@ impl<'a> Explosion<'a> {
             large_particle: Particle::ExplosionEmitter,
             sound: Sound::EntityGenericExplode,
             from_wind_charge: false,
+            create_fire: false,
         }
     }
 
@@ -319,6 +326,18 @@ impl<'a> Explosion<'a> {
     pub const fn from_wind_charge(mut self) -> Self {
         self.from_wind_charge = true;
         self
+    }
+
+    /// Makes the explosion light fires in its crater (vanilla `fire`, Bukkit `setFire`).
+    #[must_use]
+    pub const fn with_fire(mut self) -> Self {
+        self.create_fire = true;
+        self
+    }
+
+    #[must_use]
+    pub const fn creates_fire(&self) -> bool {
+        self.create_fire
     }
 
     /// Mirrors `ServerExplosion.isSmall`.
@@ -752,11 +771,43 @@ impl<'a> Explosion<'a> {
                         });
                     }
                 }
-                // TODO: fire
+                if self.create_fire {
+                    for pos in fire_positions(
+                        blocks.keys().copied(),
+                        || rand::random::<u32>() % 3,
+                        |pos| world.get_block_state(pos).is_air(),
+                        |pos| {
+                            world
+                                .get_block_state(&pos.down())
+                                .is_side_solid(BlockDirection::Up)
+                        },
+                    ) {
+                        let fire = if SoulFireBlock::is_soul_base(world.get_block(&pos.down())) {
+                            Block::SOUL_FIRE.default_state.id
+                        } else {
+                            FireBlock.get_state_for_position(world.as_ref(), &Block::FIRE, &pos)
+                        };
+                        world.set_block_state(&pos, fire, BlockFlags::NOTIFY_ALL);
+                    }
+                }
                 blocks.len() as u32
             }
         }
     }
+}
+
+/// Vanilla `ServerExplosion.interactWithBlocks` fire rule: each destroyed position has a 1 in 3
+/// chance (`roll() == 0`) to burn, if it is now air above a solid face.
+fn fire_positions(
+    destroyed: impl IntoIterator<Item = BlockPos>,
+    mut roll: impl FnMut() -> u32,
+    is_air: impl Fn(&BlockPos) -> bool,
+    solid_below: impl Fn(&BlockPos) -> bool,
+) -> Vec<BlockPos> {
+    destroyed
+        .into_iter()
+        .filter(|pos| roll() == 0 && is_air(pos) && solid_below(pos))
+        .collect()
 }
 
 #[cfg(test)]
@@ -778,6 +829,30 @@ mod tests {
             assert!(Explosion::is_rail(rail));
         }
         assert!(!Explosion::is_rail(&Block::STONE));
+    }
+
+    #[test]
+    fn fire_is_scattered_on_one_in_three_air_positions_above_solid() {
+        let positions: Vec<BlockPos> = (0..6).map(|x| BlockPos::new(x, 64, 0)).collect();
+        let mut rolls = [0, 1, 0, 2, 0, 0].into_iter();
+        let burning = super::fire_positions(
+            positions.clone(),
+            || rolls.next().unwrap(),
+            |pos| pos.0.x != 4, // x = 4 is not air
+            |pos| pos.0.x != 5, // x = 5 has no solid floor
+        );
+        // x = 1 and 3 fail the roll, 4 is not air, 5 has no floor.
+        assert_eq!(burning, vec![positions[0], positions[2]]);
+
+        assert!(
+            !Explosion::new(1.0, Vector3::new(0.0, 0.0, 0.0), BlockInteraction::Destroy)
+                .creates_fire()
+        );
+        assert!(
+            Explosion::new(1.0, Vector3::new(0.0, 0.0, 0.0), BlockInteraction::Destroy)
+                .with_fire()
+                .creates_fire()
+        );
     }
 
     #[tokio::test]
