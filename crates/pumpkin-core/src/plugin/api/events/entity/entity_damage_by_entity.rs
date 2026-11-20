@@ -15,4 +15,11 @@ pub struct EntityDamageByEntityEvent {
 
     /// The damage cause.
     pub cause: String,
+
+    /// The damage that would be taken off the victim's health once armor, resistance,
+    /// protection enchantments and absorption are applied (read-only).
+    pub final_damage: f32,
+
+    /// The victim's health when the hit lands.
+    pub health: f32,
 }

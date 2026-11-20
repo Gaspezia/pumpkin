@@ -15,6 +15,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
 | 19 | Degats de la bordure du monde pour les joueurs hors zone de securite (formule vanilla `outside_border`) | branche `gaspezia-patch/world-border-damage` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 20 | `final-damage` et `health` dans `entity-damage-event` et `entity-damage-by-entity-event` | branche `gaspezia-patch/final-damage` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -180,6 +181,13 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-core/src/world/border.rs` (`outside_damage` + test `border_damage_follows_the_vanilla_formula`), `entity/living.rs`.
 - Limites : le test vanilla `isWithinBounds(boite)` n'est pas refait (la distance du point suffit des que la zone de securite est >= 0) ; les degats suivent `new_diameter` (la bordure ne s'interpole pas cote serveur, comportement existant) ; les valeurs de `level.dat` (`BorderDamagePerBlock`, `BorderSafeZone`) ne sont toujours pas relues.
 - Proposable upstream : oui (fidelite vanilla).
+### Patch 20 : degats finaux dans `entity-damage-event`
+
+- Quoi : `entity-damage-event-data` et `entity-damage-by-entity-event-data` (WIT v0.2) portent `final-damage: f32` (ce qui sera retire a la vie : casque x0,75, cooldown de coup, armure et robustesse, resistance, protections enchantees, absorption) et `health: f32` (vie de la victime au moment du coup). `LivingEntity::preview_final_damage` rejoue le pipeline de `damage_with_context` sans effet de bord (pas d'usure d'armure, pas de statistique) ; `get_damage_after_armor_absorb` et `get_damage_after_magic_absorb` sont decoupes en une partie pure reutilisee. Les deux champs sont informatifs : les relire dans le plugin n'a aucun effet, `damage` reste le champ a modifier.
+- Pourquoi : GArena et BedWars annulent un coup mortel (`vie <= degat final`) pour que le joueur ne passe jamais par l'ecran de mort. Avec le montant brut le mode devait estimer l'armure. Cela couvre aussi le besoin « mort annulable » : le plugin annule lui-meme l'evenement de degats quand `final-damage >= health`.
+- Fichiers : `crates/pumpkin-core/src/entity/living.rs` (+ test `preview_final_damage_matches_what_reaches_the_health`), `plugin/api/events/entity/entity_damage*.rs`, `crates/pumpkin-plugin-wit/v0.2/event.wit`, `crates/pumpkin-wasm-host-v0_2/src/events/entity.rs`.
+- Limites : le blocage au bouclier n'est pas previsualise (effets de bord) ; un plugin qui change `damage` dans le premier evenement voit le second recalculer `final-damage` sur le nouveau montant ; `entity-damage-by-block-event` n'a pas les champs ; les entites sans vie (item, orbe) recoivent `final-damage` = `damage` et `health` = 0.
+- Proposable upstream : oui (champ ajoute, changement cassant du WIT v0.2 pour les plugins qui construisent l'enregistrement).
 
 ## Journal des mises a jour
 
@@ -201,3 +209,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 16 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 18 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 19 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 20 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
