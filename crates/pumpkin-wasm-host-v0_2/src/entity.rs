@@ -425,30 +425,6 @@ impl HostEntity for PluginHostState {
             Ok(None)
         }
     }
-    fn get_passengers(
-        &mut self,
-        entity: Resource<Entity>,
-    ) -> wasmtime::Result<Vec<Resource<Entity>>> {
-        let entity = self.get(&entity)?.clone();
-        let passengers = entity.get_entity().passengers.lock_ignore_poison();
-        let mut result = Vec::new();
-        for p in passengers.iter() {
-            result.push(
-                self.add(Arc::clone(p))
-                    .map_err(|_| wasmtime::Error::msg("failed to add entity resource"))?,
-            );
-        }
-        Ok(result)
-    }
-
-    fn get_bounding_box(&mut self, entity: Resource<Entity>) -> wasmtime::Result<WitBoundingBox> {
-        let entity = self.get(&entity)?;
-        let bb = entity.get_entity().bounding_box.load();
-        Ok(WitBoundingBox {
-            min: to_wasm_position(bb.min),
-            max: to_wasm_position(bb.max),
-        })
-    }
 
     fn get_leashed_entities(
         &mut self,
@@ -487,6 +463,30 @@ impl HostEntity for PluginHostState {
         Ok(entity.get_entity().is_leashed())
     }
 
+    fn get_passengers(
+        &mut self,
+        entity: Resource<Entity>,
+    ) -> wasmtime::Result<Vec<Resource<Entity>>> {
+        let entity = self.get(&entity)?.clone();
+        let passengers = entity.get_entity().passengers.lock_ignore_poison();
+        let mut result = Vec::new();
+        for p in passengers.iter() {
+            result.push(
+                self.add(Arc::clone(p))
+                    .map_err(|_| wasmtime::Error::msg("failed to add entity resource"))?,
+            );
+        }
+        Ok(result)
+    }
+
+    fn get_bounding_box(&mut self, entity: Resource<Entity>) -> wasmtime::Result<WitBoundingBox> {
+        let entity = self.get(&entity)?;
+        let bb = entity.get_entity().bounding_box.load();
+        Ok(WitBoundingBox {
+            min: to_wasm_position(bb.min),
+            max: to_wasm_position(bb.max),
+        })
+    }
 
     fn is_in_water(&mut self, entity: Resource<Entity>) -> wasmtime::Result<bool> {
         let entity = self.get(&entity)?;

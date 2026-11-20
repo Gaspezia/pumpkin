@@ -492,12 +492,12 @@ interface %world {
         get-leash-holder: func() -> option<entity>;
         /// Returns all entities currently leashed to this entity.
         get-leashed-entities: func() -> list<entity>;
+
         get-bounding-box: func() -> bounding-box;
 
         is-in-water: func() -> bool;
         is-in-lava: func() -> bool;
         is-in-water-or-rain: func() -> bool;
-
 
         /// Returns whether this entity is still valid (alive and not removed from the world).
         is-valid: func() -> bool;
@@ -687,15 +687,15 @@ interface %world {
         set-freeze-ticks: func(ticks: s32);
         /// Returns the number of freeze ticks currently on this entity.
         get-freeze-ticks: func() -> s32;
+
+        /// Sets the entity this mob is leashed to, or clears the leash when `none` is passed.
+        set-leash-holder: func(holder: option<entity>);
     }
 
     /// Result of a raycast operation.
     record raycast-result {
         /// The block position that was hit.
         pos: block-pos,
-
-        /// Sets the entity this mob is leashed to, or clears the leash when `none` is passed.
-        set-leash-holder: func(holder: option<entity>);
         /// The face of the block that was hit.
         face: block-direction,
     }
@@ -1118,6 +1118,7 @@ interface %world {
         /// `detonate` = true: the rocket explodes during this call (clients get spawn, metadata, entity event 17, removal).
         /// The explosion deals vanilla damage (5 + 2 x number of explosions, radius 5 blocks; same as Paper): detonate away from players.
         /// Returns `none` if an entity spawn event handler cancels the spawn.
+
         spawn-firework: async func(pos: position, flight-duration: u8, explosions: list<firework-explosion>, detonate: bool) -> option<entity>;
 
         /// Spawns a dropped item entity with the given item stack at the exact position with zero initial velocity.
@@ -1127,7 +1128,6 @@ interface %world {
         drop-item-naturally: async func(pos: position, item: item-stack) -> entity;
 
         /// Drops an item stack at the center of the given block position with natural random offset and velocity (`World::drop_stack`).
-
         drop-stack: async func(pos: block-pos, item: item-stack);
 
         /// Spawns one or more experience orbs totaling `amount` XP at the given position.
