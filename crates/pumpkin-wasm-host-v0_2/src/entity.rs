@@ -412,7 +412,6 @@ impl HostEntity for PluginHostState {
         }
     }
 
-
     fn get_owner(
         &mut self,
         entity: Resource<Entity>,
