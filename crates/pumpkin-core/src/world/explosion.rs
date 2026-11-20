@@ -563,8 +563,7 @@ impl<'a> Explosion<'a> {
                 continue;
             }
 
-            let mut damage_refused = false;
-            if should_damage
+            let damage_refused = if should_damage
                 && self
                     .source
                     .is_none_or(|source| source.do_teams_allow_damage(entity_base.as_ref()))
@@ -579,8 +578,10 @@ impl<'a> Explosion<'a> {
                     self.source,
                     self.indirect_source(),
                 );
-                damage_refused = !damaged;
-            }
+                !damaged
+            } else {
+                false
+            };
 
             // Paper parity: a damage event cancelled by a plugin also cancels the knockback.
             if !knockback_allowed(damage_refused) {
