@@ -98,6 +98,26 @@ impl EntityBase for FallingEntity {
                     {
                         state_id = concrete.default_state.id;
                     }
+                    let mut event =
+                        crate::plugin::api::events::entity::entity_change_block::EntityChangeBlockEvent::new(
+                            entity.entity_id,
+                            landing_pos,
+                            format!("minecraft:{}", Block::from_state_id(state_id).name),
+                        );
+                    if let Some(server) = world.server.upgrade() {
+                        server.plugin_manager.fire_blocking(&server, &mut event);
+                    }
+                    if event.cancelled {
+                        // Like Paper: the block does not settle and drops as an item instead.
+                        if world.level_info.load().game_rules.entity_drops
+                            && let Some(item) = Item::from_id(block.item_id)
+                        {
+                            entity.spawn_at_location(ItemStack::new(1, item));
+                        }
+                        self.entity.remove();
+                        entity.velocity.store(velo.multiply(0.98, 0.98, 0.98));
+                        return;
+                    }
                     world.set_block_state(&landing_pos, state_id, BlockFlags::NOTIFY_ALL);
                     // block updates to watchers before the despawn, else a invisible block gap until the tick flush.
                     let placed = world.get_block_state_id(&landing_pos);

@@ -14,6 +14,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
+| 22 | `entity-change-block-event` tire a l'atterrissage d'un bloc qui tombe | branche `gaspezia-patch/falling-block-change-event` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -171,6 +172,16 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : le retrait/renvoi de la tab list n'est fait que pour les clients Java ; un joueur cache qui rejoint apres coup, ou change de monde, reste soumis au filtre du suivi mais sa ligne de tab list peut reapparaitre. Pas de test de bout en bout (aucun joueur factice dans le cœur).
 - Proposable upstream : oui.
 
+
+### Patch 22 : `entity-change-block-event` a l'atterrissage d'un bloc qui tombe
+
+- Quoi : `FallingBlockEntity::tick` tire `EntityChangeBlockEvent` (position d'arrivee, bloc pose) juste avant `set_block_state`. Annule : le bloc ne se pose pas et tombe en objet (comportement Paper), l'entite est retiree.
+- Pourquoi : GArena memorise la position d'arrivee de la poudre de beton (`onEntityChangeBlock`) pour restaurer la carte a la fin de la manche ; sans l'evenement, les blocs tombes restaient d'une manche a l'autre.
+- Fichiers : `crates/pumpkin-core/src/entity/falling.rs`. WIT inchangee (l'enregistrement existait deja).
+- Source : l'idee (evenement a l'atterrissage) existe dans le fork ArkFlame/Kabocha (GPL v3, `falling.rs`) ; le code est reecrit ici, sans copie, sur le modele de `pick_up_block.rs`.
+- Limites : pas de test unitaire (la boucle de tick demande un monde complet) ; le nom du bloc est celui apres solidification (poudre -> beton).
+- Proposable upstream : oui.
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -190,3 +201,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 15 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 16 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 18 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 22 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
