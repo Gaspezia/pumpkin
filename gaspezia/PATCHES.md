@@ -16,6 +16,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
 | 8 | `play-sound`, `play-sound-at` et `stop-sound` de l'hote v0.2 : correspondance fiable entre le variant WIT et `pumpkin_data::sound::Sound` (plus de trap sur tout son) | branche `gaspezia-patch/plugin-play-sound` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
 | 9 | `custom_name` d'un objet garde ses styles (gras, couleurs) a l'encodage reseau : `CustomNameImpl` encode comme `LoreImpl` | branche `gaspezia-patch/custom-name-styles` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
+| 10 | `display.set-interpolation-start` toujours renvoye au client (champ force comme vanilla) : `SynchedEntityData::set_forced` | branche `gaspezia-patch/forced-interpolation` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
 
 ### Patch 3 : `player-spawn-location-event` au join
 
@@ -86,6 +87,14 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : le defaut italique du client reste pour un nom sans `italic:false` explicite (a poser cote mode).
 - Proposable upstream : oui (sans dependance Gaspezia), a condition de l'ouvrir via l'utilisateur.
 
+### Patch 10 : interpolation d'un display toujours envoyee
+
+- Quoi : `SynchedEntityData::set` ne marque un champ sale que si sa valeur change. `SynchedEntityData::set_forced` (et `Entity::set_synced_data_forced`) le marque toujours, comme le `force=true` de vanilla (`Display.setTransformationInterpolationDelay`). `DisplayEntity::set_interpolation_start_delta_ticks` l'utilise.
+- Pourquoi : le client ne relance l'interpolation d'un display qu'a la reception de ce champ ; sans cela, une animation envoyee avec `delay=0` et `duration=n` saute d'une pose a l'autre au lieu d'etre lissee.
+- Fichiers : `crates/pumpkin-core/src/entity/synched_entity_data.rs` (+ test `set_forced_marks_dirty_even_when_unchanged`), `entity/mod.rs`, `entity/decoration/display.rs`.
+- Limites : le renvoi groupe de l'etat du display (`display.rs`, autre appel a `START_INTERPOLATION`) garde l'envoi sur changement.
+- Proposable upstream : oui (fidelite vanilla).
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -95,3 +104,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-16 | `upstream/master` @ `2285efe83` (89 commits depuis `eda69440e`) + tete de la PR #3962 `cc9102bd2` ; avance du 25/11 (decision de Bastien) | 4 : `v0.2/world.wit` + `wasm-host-v0_2/src/world.rs` (upstream a ajoute le meme `get-loaded-chunk-count` : version upstream gardee) ; `pumpkin-core/src/world/mod.rs` (patch 3 reinsere apres la reorganisation de `spawn_java_player`, #3708) ; `Cargo.lock` (`pumpkin-plugin-helpers` retire par la PR #3962) | verification 14 min 17 s (debug, sans LTO) | clippy + tests `pumpkin-wasm-host-v0_2` (19) OK ; `cargo check -p pumpkin --features plugin-v0_2` OK ; gapi-rs : clippy wasm OK contre le nouveau SDK |
 | 2026-11-19 | aucun (patch 8 seul, sans fusion upstream) | aucun | - | tests `pumpkin-wasm-host-v0_2` (son) OK |
 | 2026-11-19 | aucun (patch 9 seul, sans fusion upstream) | aucun | - | tests `pumpkin-protocol` OK |
+| 2026-11-19 | aucun (patch 10 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
