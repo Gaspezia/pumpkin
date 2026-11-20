@@ -145,10 +145,10 @@ impl HostEntity for PluginHostState {
         velocity: Position,
     ) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
+        // Also broadcast it, like Paper's `hurtMarked`: a bare store is never sent to clients.
         entity
             .get_entity()
-            .velocity
-            .store(pumpkin_util::math::vector3::Vector3::new(
+            .set_velocity(pumpkin_util::math::vector3::Vector3::new(
                 velocity.0, velocity.1, velocity.2,
             ));
         Ok(())

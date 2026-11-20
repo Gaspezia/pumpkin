@@ -6468,6 +6468,22 @@ mod dimension_tests {
         (a - b).abs() < 1e-6
     }
 
+    /// `set_velocity` (what the plugin host calls) broadcasts to watchers; a bare store does not.
+    #[tokio::test]
+    async fn set_velocity_is_sent_to_watchers() -> TestResult {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let entity = Entity::new(world, Vector3::new(0.0, 64.0, 0.0), &EntityType::SHEEP);
+        let v = Vector3::new(1.0, 2.0, 3.0);
+
+        entity.velocity.store(v);
+        assert_ne!(entity.last_sent_velocity.load(), v);
+
+        entity.set_velocity(v);
+        assert_eq!(entity.last_sent_velocity.load(), v);
+        Ok(())
+    }
+
     #[tokio::test]
     async fn special_sizes_match_vanilla() -> TestResult {
         let folder = tempfile::tempdir()?;
