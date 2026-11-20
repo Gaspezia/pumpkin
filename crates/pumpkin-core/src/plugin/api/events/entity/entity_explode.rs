@@ -1,4 +1,5 @@
 use pumpkin_macros::{Event, cancellable};
+use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
 /// An event that occurs when an entity explodes.
@@ -13,6 +14,13 @@ pub struct EntityExplodeEvent {
 
     /// The yield rate of blocks destroyed.
     pub yield_rate: f32,
+
+    /// The blocks the explosion is about to destroy. A plugin removes entries to spare
+    /// blocks; entries it adds are ignored. Empty when the explosion does not touch blocks.
+    pub blocks: Vec<BlockPos>,
+
+    /// The entity credited with the explosion (who lit the TNT, who shot the fireball), if any.
+    pub owner_id: Option<i32>,
 }
 
 impl EntityExplodeEvent {
@@ -22,7 +30,16 @@ impl EntityExplodeEvent {
             entity_id,
             position,
             yield_rate,
+            blocks: Vec::new(),
+            owner_id: None,
             cancelled: false,
         }
+    }
+
+    #[must_use]
+    pub fn with_blocks(mut self, blocks: Vec<BlockPos>, owner_id: Option<i32>) -> Self {
+        self.blocks = blocks;
+        self.owner_id = owner_id;
+        self
     }
 }
