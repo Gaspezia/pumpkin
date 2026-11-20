@@ -14,6 +14,12 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
+| 19 | Degats de la bordure du monde pour les joueurs hors zone de securite (formule vanilla `outside_border`) | branche `gaspezia-patch/world-border-damage` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 20 | `final-damage` et `health` dans `entity-damage-event` et `entity-damage-by-entity-event` | branche `gaspezia-patch/final-damage` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 21 | Laisse pour les plugins v0.2 (`set-leash-holder`, `get-leash-holder`, `get-leashed-entities`), forme de la PR upstream #3927 | branche `gaspezia-patch/entity-leash` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 22 | `entity-change-block-event` tire a l'atterrissage d'un bloc qui tombe | branche `gaspezia-patch/falling-block-change-event` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 23 | `entity-explode-event` porte les blocs a detruire (reductibles) et le proprietaire | branche `gaspezia-patch/explosion-blocks` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 24 | `entity.get-owner` / `set-owner` et `world.spawn-primed-tnt` | branche `gaspezia-patch/entity-owner` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 25 | `player.launch-fireball` (puissance, incendiaire, vitesse) | branche `gaspezia-patch/launch-fireball` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -173,6 +179,47 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Proposable upstream : oui.
 
 
+### Patch 19 : degats de la bordure du monde
+
+- Quoi : un joueur dont la position est au-dela de la zone de securite de la bordure (`buffer`, 5 blocs par defaut) subit chaque tick `max(1, floor(-(distance a la bordure + zone de securite) x degats par bloc))` de type `outside_border`, comme `LivingEntity.baseTick` vanilla (joueurs seulement, apres le test de suffocation). `Worldborder::new` prend les valeurs par defaut vanilla (0,2 degat par bloc, zone de securite de 5) au lieu de 0 : une bordure posee par un plugin (`set-size`) ou par `/worldborder` blesse desormais.
+- Pourquoi : un mode (Arena) reduit la bordure en fin de manche et attend que les joueurs hors zone prennent des degats comme avec Paper ; Pumpkin n'en infligeait aucun (le champ `damage_per_block` n'etait lu nulle part).
+- Fichiers : `crates/pumpkin-core/src/world/border.rs` (`outside_damage` + test `border_damage_follows_the_vanilla_formula`), `entity/living.rs`.
+- Limites : le test vanilla `isWithinBounds(boite)` n'est pas refait (la distance du point suffit des que la zone de securite est >= 0) ; les degats suivent `new_diameter` (la bordure ne s'interpole pas cote serveur, comportement existant) ; les valeurs de `level.dat` (`BorderDamagePerBlock`, `BorderSafeZone`) ne sont toujours pas relues.
+- Proposable upstream : oui (fidelite vanilla).
+### Patch 20 : degats finaux dans `entity-damage-event`
+
+- Quoi : `entity-damage-event-data` et `entity-damage-by-entity-event-data` (WIT v0.2) portent `final-damage: f32` (ce qui sera retire a la vie : casque x0,75, cooldown de coup, armure et robustesse, resistance, protections enchantees, absorption) et `health: f32` (vie de la victime au moment du coup). `LivingEntity::preview_final_damage` rejoue le pipeline de `damage_with_context` sans effet de bord (pas d'usure d'armure, pas de statistique) ; `get_damage_after_armor_absorb` et `get_damage_after_magic_absorb` sont decoupes en une partie pure reutilisee. Les deux champs sont informatifs : les relire dans le plugin n'a aucun effet, `damage` reste le champ a modifier.
+- Pourquoi : GArena et BedWars annulent un coup mortel (`vie <= degat final`) pour que le joueur ne passe jamais par l'ecran de mort. Avec le montant brut le mode devait estimer l'armure. Cela couvre aussi le besoin « mort annulable » : le plugin annule lui-meme l'evenement de degats quand `final-damage >= health`.
+- Fichiers : `crates/pumpkin-core/src/entity/living.rs` (+ test `preview_final_damage_matches_what_reaches_the_health`), `plugin/api/events/entity/entity_damage*.rs`, `crates/pumpkin-plugin-wit/v0.2/event.wit`, `crates/pumpkin-wasm-host-v0_2/src/events/entity.rs`.
+- Limites : le blocage au bouclier n'est pas previsualise (effets de bord) ; un plugin qui change `damage` dans le premier evenement voit le second recalculer `final-damage` sur le nouveau montant ; `entity-damage-by-block-event` n'a pas les champs ; les entites sans vie (item, orbe) recoivent `final-damage` = `damage` et `health` = 0.
+- Proposable upstream : oui (champ ajoute, changement cassant du WIT v0.2 pour les plugins qui construisent l'enregistrement).
+### Patch 21 : laisse (`set-leash-holder`, `get-leash-holder`, `get-leashed-entities`)
+
+- Quoi : WIT v0.2, ajout seulement, avec les noms et signatures de la PR upstream Pumpkin-MC/Pumpkin#3927 (ouverte, non fusionnee) : `entity.is-leashed() -> bool`, `entity.get-leash-holder() -> option<entity>`, `entity.get-leashed-entities() -> list<entity>` et `mob.set-leash-holder(option<entity>)` (laisse ou, avec `none`, detache). Le code hote est reecrit chez nous : le cœur garde le detenteur en `Weak`, on passe donc par `Entity::get_leash_holder`, et `get-leashed-entities` parcourt les entites et joueurs du monde. `leash_to` / `unleash` du cœur tirent leurs evenements (`PlayerLeashEntityEvent`, `EntityUnleashEvent`) comme d'habitude ; un plugin relit `is-leashed` pour savoir si un gestionnaire a annule.
+- Pourquoi : le largage de coffre de GArena suspend le coffre sous 5 poulets relies par des laisses a un armor stand (`setLeashHolder`).
+- Fichiers : `crates/pumpkin-plugin-wit/v0.2/world.wit`, `crates/pumpkin-wasm-host-v0_2/src/entity.rs` et `mob.rs`. Aucune modification du cœur.
+- Limites : pas de test automatique (aucun composant invite) ; la distance de rupture de la laisse et la chute du detenteur restent celles du cœur ; `unleash` ne fait pas tomber l'objet laisse ; `set-leash-holder` n'est que sur `mob` (comme la PR upstream) : un joueur ou un armor stand ne peut pas etre le laisse.
+- Proposable upstream : sans objet (la PR #3927 existe) ; a la mise a jour, garder la version upstream si elle est fusionnee.
+### Patch 22 : `entity-change-block-event` a l'atterrissage d'un bloc qui tombe
+
+- Quoi : `FallingBlockEntity::tick` tire `EntityChangeBlockEvent` (position d'arrivee, bloc pose) juste avant `set_block_state`. Annule : le bloc ne se pose pas et tombe en objet (comportement Paper), l'entite est retiree.
+- Pourquoi : GArena memorise la position d'arrivee de la poudre de beton (`onEntityChangeBlock`) pour restaurer la carte a la fin de la manche ; sans l'evenement, les blocs tombes restaient d'une manche a l'autre.
+- Fichiers : `crates/pumpkin-core/src/entity/falling.rs`. WIT inchangee (l'enregistrement existait deja).
+- Source : l'idee (evenement a l'atterrissage) existe dans le fork ArkFlame/Kabocha (GPL v3, `falling.rs`) ; le code est reecrit ici, sans copie, sur le modele de `pick_up_block.rs`.
+- Limites : pas de test unitaire (la boucle de tick demande un monde complet) ; le nom du bloc est celui apres solidification (poudre -> beton).
+### Patch 23 : blocs et proprietaire dans `entity-explode-event`
+
+- Quoi : `entity-explode-event-data` porte `blocks: list<block-pos>` (blocs que l'explosion va detruire, calcules avant l'evenement par `Explosion::get_blocks_to_destroy`) et `owner-id: option<s32>` (entite creditee : celui qui a allume la TNT, tire la boule de feu). Le plugin retire des entrees pour epargner des blocs ; `Explosion::explode` recoit l'ensemble reduit et ne recalcule rien. Vide pour `interaction::none`.
+- Pourquoi : BedWars ne laisse partir que les blocs poses par un joueur (laine, toile, feuilles) et jamais un lit ; le mode annulait l'explosion et recassait une sphere a la main, sans la geometrie ni les drops vanilla.
+- Fichiers : `crates/pumpkin-core/src/world/explosion.rs`, `world/mod.rs` (`run_explosion`), `plugin/api/events/entity/entity_explode.rs`, `event.wit`, `crates/pumpkin-wasm-host-v0_2/src/events/entity.rs`.
+- Limites : seules les entrees d'origine comptent (un bloc ajoute est ignore) ; les blocs sont calcules avant les degats aux entites (ordre vanilla) ; `block-explode-event` n'est pas change ; pas de test unitaire dedie (la logique est un `retain`).
+### Patch 24 : proprietaire d'une entite et TNT amorcee
+
+- Quoi : `entity.get-owner() -> option<entity>` et `entity.set-owner(option<entity>) -> bool` (projectiles et TNT amorcee ; faux pour les autres entites), `world.spawn-primed-tnt(pos, fuse-ticks, owner) -> option<entity>`. Cote cœur : `EntityBase::set_owner_entity`, `ProjectileOwner::set_owner`, `get_owner_entity` implemente pour `TNTEntity`.
+- Pourquoi : BedWars credite les morts par TNT, boule de feu ou fleche a leur proprietaire (`TNTPrimed.getSource`, `Projectile.getShooter`) ; le mode tenait une table id -> uuid, aveugle aux fleches.
+- Fichiers : `crates/pumpkin-core/src/entity/mod.rs`, `tnt.rs`, `projectile/owner.rs`, `crates/pumpkin-plugin-wit/v0.2/world.wit`, `crates/pumpkin-wasm-host-v0_2/src/entity.rs` et `world.rs`.
+- Limites : pas de test automatique ; `spawn-primed-tnt` utilise la puissance par defaut (4) et ne lui donne pas de vitesse initiale ; un `EntitySpawnEvent` annule renvoie `none`.
+- Proposable upstream : oui.
 ### Patch 25 : `player.launch-fireball`
 
 - Quoi : `player.launch-fireball(power, incendiary, speed) -> option<entity>` (asynchrone) lance une boule de feu depuis les yeux du joueur dans sa ligne de visee, creditee au joueur. `FireballEntity` gagne `incendiary` (l'explosion pose du feu, via `Explosion::with_fire` du patch 13) et `set_speed` (acceleration en blocs par tick, 0,1 par defaut ; zero ou moins = defaut).
@@ -200,4 +247,10 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 15 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 16 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 18 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 19 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 20 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 21 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 22 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 23 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 24 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 25 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |

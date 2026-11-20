@@ -87,6 +87,15 @@ impl EntityBase for TNTEntity {
         !self.get_entity().is_removed()
     }
 
+    fn get_owner_entity(&self) -> Option<Arc<dyn EntityBase>> {
+        self.owner.get(&self.entity.world.load())
+    }
+
+    fn set_owner_entity(&self, owner: Option<&Entity>) -> bool {
+        self.owner.set_uuid(owner.map(|owner| owner.entity_uuid));
+        true
+    }
+
     /// Vanilla `PrimedTnt.addAdditionalSaveData`. Without it a chunk reload resets a
     /// nearly-detonated fuse and the TNT explodes late.
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
