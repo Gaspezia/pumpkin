@@ -861,6 +861,8 @@ impl ToFromWasmEvent for EntityDamageByEntityEvent {
             damager_id: self.damager_id,
             damage: self.damage,
             cause: self.cause.clone(),
+            final_damage: self.final_damage,
+            health: self.health,
             cancelled: self.cancelled,
         })
     }
@@ -873,8 +875,6 @@ impl ToFromWasmEvent for EntityDamageByEntityEvent {
         }
     }
 
-            final_damage: self.final_damage,
-            health: self.health,
     fn from_wasm_event(event: Event, _state: &mut PluginHostState) -> Self {
         match event {
             Event::EntityDamageByEntityEvent(data) => Self {
@@ -882,6 +882,8 @@ impl ToFromWasmEvent for EntityDamageByEntityEvent {
                 damager_id: data.damager_id,
                 damage: data.damage,
                 cause: data.cause,
+                final_damage: data.final_damage,
+                health: data.health,
                 cancelled: data.cancelled,
             },
             _ => panic!("unexpected event type"),
@@ -894,8 +896,6 @@ impl ToFromWasmEvent for EntityDropItemEvent {
         Event::EntityDropItemEvent(EntityDropItemEventData {
             entity_id: self.entity_id,
             item_name: self.item_name.clone(),
-                final_damage: data.final_damage,
-                health: data.health,
             count: self.count,
             cancelled: self.cancelled,
         })

@@ -5528,6 +5528,7 @@ mod tests {
 
 #[cfg(test)]
 mod ai_step_tests {
+    use pumpkin_data::damage::DamageType;
     use std::error::Error;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
@@ -5542,7 +5543,6 @@ mod ai_step_tests {
     use crate::entity::mob::{Mob, MobEntity};
     use crate::entity::{Entity, EntityBase};
     use crate::world::World;
-    use pumpkin_data::damage::DamageType;
     use pumpkin_data::{attributes::Attributes, entity::EntityType};
     use pumpkin_util::math::position::BlockPos;
     use pumpkin_util::math::vector3::Vector3;
@@ -5650,20 +5650,6 @@ mod ai_step_tests {
     }
 
     #[tokio::test]
-    async fn bat_does_not_push_overlapping_mobs() -> TestResult {
-        use crate::entity::mob::bat::BatEntity;
-
-        let folder = tempfile::tempdir()?;
-        let world = world(&folder);
-        let bat = BatEntity::new(Entity::new(
-            world.clone(),
-            Vector3::new(0.0, 64.0, 0.0),
-            &EntityType::BAT,
-        ));
-        let other = Arc::new(probe(world.clone(), Arc::new(AtomicUsize::new(0))));
-        other.get_entity().set_pos(Vector3::new(0.1, 64.0, 0.0));
-
-    #[tokio::test]
     async fn preview_final_damage_matches_what_reaches_the_health() -> TestResult {
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
@@ -5688,6 +5674,20 @@ mod ai_step_tests {
         world.level.shutdown().await;
         Ok(())
     }
+
+    #[tokio::test]
+    async fn bat_does_not_push_overlapping_mobs() -> TestResult {
+        use crate::entity::mob::bat::BatEntity;
+
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let bat = BatEntity::new(Entity::new(
+            world.clone(),
+            Vector3::new(0.0, 64.0, 0.0),
+            &EntityType::BAT,
+        ));
+        let other = Arc::new(probe(world.clone(), Arc::new(AtomicUsize::new(0))));
+        other.get_entity().set_pos(Vector3::new(0.1, 64.0, 0.0));
         world.add_entity_silent(bat.clone());
         world.add_entity_silent(other.clone());
 
