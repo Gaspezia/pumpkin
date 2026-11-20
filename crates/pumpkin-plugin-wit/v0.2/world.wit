@@ -1120,14 +1120,14 @@ interface %world {
         /// Spawns an entity of the specified type at the given position.
         spawn-entity: async func(entity-type: entity-type, pos: position) -> entity;
 
+        /// Spawns a primed TNT at `pos` (default power) that explodes after `fuse-ticks`, credited to `owner`.
+        /// Returns `none` if an entity spawn event handler cancels the spawn.
+        spawn-primed-tnt: async func(pos: position, fuse-ticks: s32, owner: option<entity>) -> option<entity>;
+
         /// Spawns a firework rocket carrying `explosions` (RGB colors, at most 256 kept). `flight-duration` as the `fireworks` component (0-255).
         /// `detonate` = true: the rocket explodes during this call (clients get spawn, metadata, entity event 17, removal).
         /// The explosion deals vanilla damage (5 + 2 x number of explosions, radius 5 blocks; same as Paper): detonate away from players.
         /// Returns `none` if an entity spawn event handler cancels the spawn.
-
-        /// Spawns a primed TNT at `pos` (default power) that explodes after `fuse-ticks`, credited to `owner`.
-        /// Returns `none` if an entity spawn event handler cancels the spawn.
-        spawn-primed-tnt: async func(pos: position, fuse-ticks: s32, owner: option<entity>) -> option<entity>;
 
         spawn-firework: async func(pos: position, flight-duration: u8, explosions: list<firework-explosion>, detonate: bool) -> option<entity>;
 
