@@ -79,7 +79,6 @@ use pumpkin_core::block::entities::trial_spawner::TrialSpawnerBlockEntity as Int
 use pumpkin_core::block::entities::vault::VaultBlockEntity as InternalVaultBlockEntity;
 use pumpkin_core::world::explosion::ExplosionInteraction;
 use pumpkin_data::game_rules::{GameRule, GameRuleValue};
-use pumpkin_wasm_host_common::state::ChunkBuffer;
 use pumpkin_wasm_host_common::state::PluginHostState;
 
 pub(crate) fn from_wit_game_rule(rule: WitGameRule) -> GameRule {
@@ -2771,20 +2770,12 @@ impl WasmChunkGenerator {
                 .store
                 .call_guest(move |mut guest| {
                     Box::pin(async move {
-                        let (buffer_resource, buffer_rep) = guest.with(|mut store| {
-                            let resource = store.data_mut().add(chunk_buffer)?;
-                            let rep = resource.rep();
-                            Ok::<_, wasmtime::Error>((resource, rep))
-                        })?;
-                        let result = guest
+                        let buffer_resource =
+                            guest.with(|mut store| store.data_mut().add(chunk_buffer))?;
+                        // `own` handle: the guest frees it, no second delete here.
+                        guest
                             .call(function, (generator_id, phase, buffer_resource))
-                            .await;
-                        guest.with(|mut store| {
-                            let _ = store.data_mut().resource_table.delete::<ChunkBuffer>(
-                                wasmtime::component::Resource::new_own(buffer_rep),
-                            );
-                        });
-                        result
+                            .await
                     })
                 })
                 .await;
