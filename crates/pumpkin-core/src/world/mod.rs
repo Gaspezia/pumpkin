@@ -313,6 +313,17 @@ impl PartialEq for World {
 impl Eq for World {}
 
 impl World {
+    /// Combat ruleset of this world (`[pvp] combat` in the config). One place to read it,
+    /// so a per-world override can replace it later without touching the call sites.
+    #[must_use]
+    pub fn combat_mode(&self) -> pumpkin_config::CombatMode {
+        self.server
+            .upgrade()
+            .map_or(pumpkin_config::CombatMode::Modern, |server| {
+                server.advanced_config.pvp.combat
+            })
+    }
+
     const TAB_LIST_ADD_FLAGS: u8 = PlayerInfoFlags::ADD_PLAYER.bits()
         | PlayerInfoFlags::UPDATE_LISTED.bits()
         | PlayerInfoFlags::UPDATE_GAME_MODE.bits()
