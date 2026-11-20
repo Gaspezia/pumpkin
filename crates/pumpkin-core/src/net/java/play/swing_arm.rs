@@ -47,7 +47,53 @@ impl JavaClient {
                 }
             }}
         } else {
+            // Paper `handleAnimate`: an ADVENTURE client that cannot break the block never sends a
+            // dig packet, only the arm swing, so the left click on a block is read from here.
+            let gamemode = player.gamemode.load();
+            if gamemode == GameMode::Adventure {
+                let world = player.world();
+                let block = world.get_block(&hit.block_pos);
+                if left_click_block_from_swing(
+                    gamemode,
+                    player.cannot_mine_block(Some(server), block, gamemode),
+                ) {
+                    let event = PlayerInteractEvent::new(
+                        player,
+                        InteractAction::LeftClickBlock,
+                        block,
+                        Some(hit.block_pos),
+                    );
+                    send_cancellable_blocking! {{
+                        &server;
+                        event;
+                        'after: {
+                            player.swing_hand(hand, false);
+                        }
+                    }}
+                    return;
+                }
+            }
             player.swing_hand(hand, false);
+        }
+    }
+}
+
+/// An arm swing stands for a left click on a block only in ADVENTURE and when the block cannot
+/// be mined (otherwise the client also sends a dig packet, which fires the event itself).
+const fn left_click_block_from_swing(gamemode: GameMode, cannot_mine: bool) -> bool {
+    matches!(gamemode, GameMode::Adventure) && cannot_mine
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GameMode, left_click_block_from_swing};
+
+    #[test]
+    fn swing_is_a_left_click_only_in_adventure_on_unbreakable_blocks() {
+        assert!(left_click_block_from_swing(GameMode::Adventure, true));
+        assert!(!left_click_block_from_swing(GameMode::Adventure, false));
+        for mode in [GameMode::Survival, GameMode::Creative, GameMode::Spectator] {
+            assert!(!left_click_block_from_swing(mode, true));
         }
     }
 }

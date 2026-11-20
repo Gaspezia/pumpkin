@@ -14,6 +14,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
+| 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 15 | Pas de recul d'explosion quand les degats sont refuses (evenement annule par un plugin), parite Paper | branche `gaspezia-patch/explosion-knockback-cancelled` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 14 | Un spectateur ne peut pas attaquer (garde `may_attack` dans `Player::attack`, commune a Java, Bedrock et aux plugins) | branche `gaspezia-patch/spectator-no-attack` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 13 | `world.create-explosion` : le drapeau `create-fire` pose du feu dans le cratere (regle vanilla) | branche `gaspezia-patch/explosion-fire` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -143,6 +144,15 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : tout refus de degats (pas seulement l'annulation par plugin, ex. entite invulnerable) supprime aussi le recul.
 - Proposable upstream : oui, a discuter (changement de comportement vanilla pour les entites invulnerables).
 
+
+### Patch 16 : clic gauche sur un bloc depuis le balancement du bras
+
+- Quoi : `handle_swing_arm` tirait `LeftClickAir` sur un rayon sans bloc, mais rien pour un bloc touche. En ADVENTURE, quand le bloc ne peut pas etre mine (`cannot_mine_block`), il tire maintenant `PlayerInteractEvent` `LeftClickBlock` avec le bloc et sa position, comme `handleAnimate` de Paper ; `cancelled` est lu comme pour l'air.
+- Pourquoi : un client vanilla en ADVENTURE ne mine pas, il agite seulement le bras : aucun `left-click-block` n'arrivait au plugin (le missile de SheepWars en depend).
+- Fichiers : `crates/pumpkin-core/src/net/java/play/swing_arm.rs` (+ test `swing_is_a_left_click_only_in_adventure_on_unbreakable_blocks` sur la regle pure `left_click_block_from_swing`).
+- Limites : pas de face touchee dans l'evenement (le constructeur n'en porte pas) ; Java seulement. Si le bloc est minable, le paquet de minage tire l'evenement : pas de doublon.
+- Proposable upstream : oui.
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -159,3 +169,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 13 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 14 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 15 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 16 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
