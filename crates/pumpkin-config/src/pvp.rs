@@ -68,6 +68,10 @@ mod tests {
     fn combat_legacy_1_8_parses_and_round_trips() {
         let parsed: PVPConfig = toml::from_str("combat = \"legacy_1_8\"").unwrap();
         assert!(parsed.combat.is_legacy());
-        assert!(toml::to_string(&parsed).unwrap().contains("combat = \"legacy_1_8\""));
+        assert!(
+            toml::to_string(&parsed)
+                .unwrap()
+                .contains("combat = \"legacy_1_8\"")
+        );
     }
 }
