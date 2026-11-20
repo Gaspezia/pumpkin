@@ -17,6 +17,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 19 | Degats de la bordure du monde pour les joueurs hors zone de securite (formule vanilla `outside_border`) | branche `gaspezia-patch/world-border-damage` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 20 | `final-damage` et `health` dans `entity-damage-event` et `entity-damage-by-entity-event` | branche `gaspezia-patch/final-damage` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 21 | Laisse pour les plugins v0.2 (`set-leash-holder`, `get-leash-holder`, `get-leashed-entities`), forme de la PR upstream #3927 | branche `gaspezia-patch/entity-leash` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 22 | `entity-change-block-event` tire a l'atterrissage d'un bloc qui tombe | branche `gaspezia-patch/falling-block-change-event` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -196,6 +197,14 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-plugin-wit/v0.2/world.wit`, `crates/pumpkin-wasm-host-v0_2/src/entity.rs` et `mob.rs`. Aucune modification du cœur.
 - Limites : pas de test automatique (aucun composant invite) ; la distance de rupture de la laisse et la chute du detenteur restent celles du cœur ; `unleash` ne fait pas tomber l'objet laisse ; `set-leash-holder` n'est que sur `mob` (comme la PR upstream) : un joueur ou un armor stand ne peut pas etre le laisse.
 - Proposable upstream : sans objet (la PR #3927 existe) ; a la mise a jour, garder la version upstream si elle est fusionnee.
+### Patch 22 : `entity-change-block-event` a l'atterrissage d'un bloc qui tombe
+
+- Quoi : `FallingBlockEntity::tick` tire `EntityChangeBlockEvent` (position d'arrivee, bloc pose) juste avant `set_block_state`. Annule : le bloc ne se pose pas et tombe en objet (comportement Paper), l'entite est retiree.
+- Pourquoi : GArena memorise la position d'arrivee de la poudre de beton (`onEntityChangeBlock`) pour restaurer la carte a la fin de la manche ; sans l'evenement, les blocs tombes restaient d'une manche a l'autre.
+- Fichiers : `crates/pumpkin-core/src/entity/falling.rs`. WIT inchangee (l'enregistrement existait deja).
+- Source : l'idee (evenement a l'atterrissage) existe dans le fork ArkFlame/Kabocha (GPL v3, `falling.rs`) ; le code est reecrit ici, sans copie, sur le modele de `pick_up_block.rs`.
+- Limites : pas de test unitaire (la boucle de tick demande un monde complet) ; le nom du bloc est celui apres solidification (poudre -> beton).
+- Proposable upstream : oui.
 
 ## Journal des mises a jour
 
@@ -219,3 +228,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 19 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 20 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 21 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 22 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
