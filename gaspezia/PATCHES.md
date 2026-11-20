@@ -22,6 +22,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 24 | `entity.get-owner` / `set-owner` et `world.spawn-primed-tnt` | branche `gaspezia-patch/entity-owner` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 25 | `player.launch-fireball` (puissance, incendiaire, vitesse) | branche `gaspezia-patch/launch-fireball` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 26 | `projectile-launch-event` pour tous les projectiles lances (perle, boule de neige, boule de feu...) | branche `gaspezia-patch/projectile-launch-all` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 27 | Combat PvP 1.8, lot 1 (activation) : `[pvp] combat = "legacy_1_8"` et `World::combat_mode()` ; aucun changement de comportement | branche `gaspezia-patch/pvp18-activation` | aucune (propre au fork) | PR Gaspezia/pumpkin (PvP 1.8, lot 1) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -236,6 +237,13 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : l'entite n'est pas encore apparue : `cancelled` n'est pas lu (comme pour la fleche) ; tire aussi pour les tirs de mobs (blaze, ghast) comme Paper ; pas de test unitaire.
 - Proposable upstream : oui.
 
+### Patch 27 : activation du combat PvP 1.8
+
+- Quoi : `crates/pumpkin-config/src/pvp.rs` gagne `combat: CombatMode` (`"modern"` par defaut, `"legacy_1_8"`), range sous `[pvp]` de `pumpkin.toml`. `World::combat_mode()` lit ce reglage : point d'acces unique, pour qu'une surcharge par monde puisse arriver sans toucher aux appelants. Aucun changement de comportement tant que le reglage reste `modern`.
+- Pourquoi : un serveur Agones heberge un seul mode ; Arena (et plus tard BedWars) jouent le combat 1.8, le lobby et les autres modes gardent le moderne. Les formules arrivent dans les patchs 28 (melee) et 29 (recul).
+- Fichiers : `crates/pumpkin-config/src/pvp.rs`, `lib.rs`, `crates/pumpkin-core/src/world/mod.rs`. WIT inchangee.
+- Limites : portee serveur entier, pas par monde. Propre au fork (jamais propose upstream).
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -263,3 +271,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 24 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 25 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 26 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 27 seul, sans fusion upstream) | aucun | - | tests `pumpkin-config` OK |
