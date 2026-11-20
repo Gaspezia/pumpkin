@@ -563,6 +563,7 @@ impl<'a> Explosion<'a> {
                 continue;
             }
 
+            let mut damage_refused = false;
             if should_damage
                 && self
                     .source
@@ -570,7 +571,7 @@ impl<'a> Explosion<'a> {
             {
                 let damage =
                     calc.get_entity_damage_amount(self, entity_base.as_ref(), exposure as f32);
-                entity_base.damage_with_context(
+                let damaged = entity_base.damage_with_context(
                     entity_base.as_ref(),
                     damage,
                     self.damage_type(),
@@ -578,6 +579,12 @@ impl<'a> Explosion<'a> {
                     self.source,
                     self.indirect_source(),
                 );
+                damage_refused = !damaged;
+            }
+
+            // Paper parity: a damage event cancelled by a plugin also cancels the knockback.
+            if !knockback_allowed(damage_refused) {
+                continue;
             }
 
             // Calculate and apply knockback
@@ -796,6 +803,11 @@ impl<'a> Explosion<'a> {
     }
 }
 
+/// An explosion pushes an entity unless it tried to damage it and the damage was refused.
+const fn knockback_allowed(damage_refused: bool) -> bool {
+    !damage_refused
+}
+
 /// Vanilla `ServerExplosion.interactWithBlocks` fire rule: each destroyed position has a 1 in 3
 /// chance (`roll() == 0`) to burn, if it is now air above a solid face.
 fn fire_positions(
@@ -829,6 +841,12 @@ mod tests {
             assert!(Explosion::is_rail(rail));
         }
         assert!(!Explosion::is_rail(&Block::STONE));
+    }
+
+    #[test]
+    fn refused_damage_cancels_the_knockback() {
+        assert!(!super::knockback_allowed(true));
+        assert!(super::knockback_allowed(false));
     }
 
     #[test]

@@ -14,6 +14,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
+| 15 | Pas de recul d'explosion quand les degats sont refuses (evenement annule par un plugin), parite Paper | branche `gaspezia-patch/explosion-knockback-cancelled` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 14 | Un spectateur ne peut pas attaquer (garde `may_attack` dans `Player::attack`, commune a Java, Bedrock et aux plugins) | branche `gaspezia-patch/spectator-no-attack` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 13 | `world.create-explosion` : le drapeau `create-fire` pose du feu dans le cratere (regle vanilla) | branche `gaspezia-patch/explosion-fire` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 12 | `entity.set-velocity` d'une entite non joueuse diffuse la vitesse aux clients (comme le `hurtMarked` de Paper) | branche `gaspezia-patch/entity-velocity-broadcast` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -133,6 +134,15 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : le test porte sur la regle, pas sur un paquet reel.
 - Proposable upstream : oui.
 
+
+### Patch 15 : pas de recul si les degats d'explosion sont annules
+
+- Quoi : dans `Explosion::damage_entities`, si l'explosion a tente d'infliger des degats et que `damage_with_context` renvoie `false` (evenement `entity-damage` / `entity-damage-by-entity` annule, ou degats refuses), l'entite n'est plus repoussee (et ne memorise pas d'impulsion). Une entite qui ne doit pas subir de degats (`should_damage_entity` faux, ex. vent) est repoussee comme avant.
+- Pourquoi : un mode qui annule les degats natifs pour appliquer son propre recul obtenait un recul double ; Paper ne repousse pas si `EntityDamageEvent` est annule.
+- Fichiers : `crates/pumpkin-core/src/world/explosion.rs` (+ test `refused_damage_cancels_the_knockback` sur la regle pure `knockback_allowed`).
+- Limites : tout refus de degats (pas seulement l'annulation par plugin, ex. entite invulnerable) supprime aussi le recul.
+- Proposable upstream : oui, a discuter (changement de comportement vanilla pour les entites invulnerables).
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -148,3 +158,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 12 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 13 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 14 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 15 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
