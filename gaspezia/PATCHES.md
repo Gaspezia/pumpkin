@@ -20,6 +20,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 22 | `entity-change-block-event` tire a l'atterrissage d'un bloc qui tombe | branche `gaspezia-patch/falling-block-change-event` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 23 | `entity-explode-event` porte les blocs a detruire (reductibles) et le proprietaire | branche `gaspezia-patch/explosion-blocks` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 24 | `entity.get-owner` / `set-owner` et `world.spawn-primed-tnt` | branche `gaspezia-patch/entity-owner` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 25 | `player.launch-fireball` (puissance, incendiaire, vitesse) | branche `gaspezia-patch/launch-fireball` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -219,6 +220,13 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-core/src/entity/mod.rs`, `tnt.rs`, `projectile/owner.rs`, `crates/pumpkin-plugin-wit/v0.2/world.wit`, `crates/pumpkin-wasm-host-v0_2/src/entity.rs` et `world.rs`.
 - Limites : pas de test automatique ; `spawn-primed-tnt` utilise la puissance par defaut (4) et ne lui donne pas de vitesse initiale ; un `EntitySpawnEvent` annule renvoie `none`.
 - Proposable upstream : oui.
+### Patch 25 : `player.launch-fireball`
+
+- Quoi : `player.launch-fireball(power, incendiary, speed) -> option<entity>` (asynchrone) lance une boule de feu depuis les yeux du joueur dans sa ligne de visee, creditee au joueur. `FireballEntity` gagne `incendiary` (l'explosion pose du feu, via `Explosion::with_fire` du patch 13) et `set_speed` (acceleration en blocs par tick, 0,1 par defaut ; zero ou moins = defaut).
+- Pourquoi : la boutique de BedWars vend une boule de feu de puissance 2, non incendiaire ; le mode lancait une boule vanilla et recreait l'explosion.
+- Fichiers : `crates/pumpkin-core/src/entity/projectile/fireball.rs`, `crates/pumpkin-plugin-wit/v0.2/player.wit`, `crates/pumpkin-wasm-host-v0_2/src/player.rs`.
+- Limites : `launch-projectile` reste un stub renvoyant `none` ; pas de test automatique ; l'explosion de la boule garde l'interaction `Mob` (regle `mobGriefing`).
+- Proposable upstream : oui (apres le patch 13, dont il depend pour le feu).
 
 ## Journal des mises a jour
 
@@ -245,3 +253,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 22 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 23 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 24 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 25 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
