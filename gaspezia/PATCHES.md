@@ -14,6 +14,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
+| 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 15 | Pas de recul d'explosion quand les degats sont refuses (evenement annule par un plugin), parite Paper | branche `gaspezia-patch/explosion-knockback-cancelled` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -161,6 +162,15 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : pas de face touchee dans l'evenement (le constructeur n'en porte pas) ; Java seulement. Si le bloc est minable, le paquet de minage tire l'evenement : pas de doublon.
 - Proposable upstream : oui.
 
+
+### Patch 18 : `hide-player` effectif
+
+- Quoi : `Player::hide_player` ne faisait qu'enregistrer l'UUID, jamais lu. Il retire maintenant l'entite du suivi de l'observateur (`TrackedEntity::remove_player` : paquet de destruction) et sa ligne de la tab list (`CRemovePlayerInfo`) ; `TrackedEntity::broadcast_to_player` refuse tout joueur cache (donc pas de re-spawn au deplacement ou au changement de chunk). `show_player` renvoie d'abord la ligne de tab list (`World::send_tab_list_entry`, Java supprime les spawns sans elle) puis relance le suivi (`update_player`).
+- Pourquoi : un mode (Loup-Garou) masque les dormeurs aux autres joueurs ; le joueur cache restait visible.
+- Fichiers : `crates/pumpkin-core/src/entity/player.rs`, `world/entity_tracker.rs` (+ tests `a_hidden_player_is_never_visible` et `spectators_are_seen_only_by_spectators` sur la regle pure `player_visible_to`), `world/mod.rs`.
+- Limites : le retrait/renvoi de la tab list n'est fait que pour les clients Java ; un joueur cache qui rejoint apres coup, ou change de monde, reste soumis au filtre du suivi mais sa ligne de tab list peut reapparaitre. Pas de test de bout en bout (aucun joueur factice dans le cœur).
+- Proposable upstream : oui.
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -179,3 +189,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 14 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 15 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 16 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 18 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |

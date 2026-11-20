@@ -5236,6 +5236,13 @@ impl World {
         )
     }
 
+    /// Sends the tab list entry of `other` to `observer` alone (Java clients).
+    pub fn send_tab_list_entry(&self, observer: &Player, other: &Player) {
+        Self::with_player_list_entry(other, |java, _bedrock| {
+            observer.try_send_client_packet(java);
+        });
+    }
+
     /// Publishes a player from another world -> tab list first, Java drops spawns without it.
     pub fn add_arriving_player(&self, player: &Arc<Player>) {
         let id = player.gameprofile.id;
