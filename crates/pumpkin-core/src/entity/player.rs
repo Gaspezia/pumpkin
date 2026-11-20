@@ -281,12 +281,12 @@ use pumpkin_protocol::java::client::play::{
     CCloseContainer, CCombatDeath, CCustomPayload, CDisguisedChatMessage, CEntityAnimation,
     CEntityPositionSync, CEntityVelocity, CGameEvent, CHurtAnimation, CItemCooldown, CMapItemData,
     COpenBook, COpenMountScreen, COpenScreen, COpenSignEditor, CParticle, CPlayServerLinks,
-    CPlayerAbilities, CPlayerInfoUpdate, CPlayerPosition, CPlayerSpawnPosition, CRespawn,
-    CSetCamera, CSetContainerContent, CSetContainerProperty, CSetContainerSlot, CSetCursorItem,
-    CSetExperience, CSetHealth, CSetPlayerInventory, CSetSelectedSlot, CSoundEffect, CStopSound,
-    CSubtitle, CSystemChatMessage, CTabList, CTitleAnimation, CTitleText, CUnloadChunk,
-    CUpdateMobEffect, CUpdateTime, GameEvent, MapIcon, MapPatch, PlayerAction, PlayerInfoFlags,
-    PlayerSpawnData, PreviousMessage, Statistic,
+    CPlayerAbilities, CPlayerInfoUpdate, CPlayerPosition, CPlayerSpawnPosition, CRemovePlayerInfo,
+    CRespawn, CSetCamera, CSetContainerContent, CSetContainerProperty, CSetContainerSlot,
+    CSetCursorItem, CSetExperience, CSetHealth, CSetPlayerInventory, CSetSelectedSlot,
+    CSoundEffect, CStopSound, CSubtitle, CSystemChatMessage, CTabList, CTitleAnimation, CTitleText,
+    CUnloadChunk, CUpdateMobEffect, CUpdateTime, GameEvent, MapIcon, MapPatch, PlayerAction,
+    PlayerInfoFlags, PlayerSpawnData, PreviousMessage, Statistic,
 };
 use pumpkin_protocol::java::server::play::{
     SClickSlot, SContainerButtonClick, SRenameItem, SlotActionType,
@@ -4615,18 +4615,46 @@ impl Player {
         self.respawn_location.load()
     }
 
+    /// Hides `other_id` from this player (Bukkit `hidePlayer`): its entity is destroyed on this
+    /// client, never spawned again while hidden, and its tab list entry is removed.
     pub fn hide_player(&self, other_id: uuid::Uuid) {
-        self.hidden_players
+        let newly_hidden = self
+            .hidden_players
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(other_id);
+        if !newly_hidden {
+            return;
+        }
+        let world = self.world();
+        if let Some(other) = world.get_player_by_uuid(other_id) {
+            if let Some(tracked) = world.entity_tracker.get_tracked_entity(other.entity_id()) {
+                tracked.remove_player(self);
+            }
+            self.try_send_client_packet(&CRemovePlayerInfo::new(&[other_id]));
+        }
     }
 
+    /// Reverses [`Self::hide_player`]: tab list entry first (Java drops spawns without it), then
+    /// the entity is tracked again if in range.
     pub fn show_player(&self, other_id: uuid::Uuid) {
-        self.hidden_players
+        let was_hidden = self
+            .hidden_players
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(&other_id);
+        if !was_hidden {
+            return;
+        }
+        let world = self.world();
+        if let Some(other) = world.get_player_by_uuid(other_id) {
+            world.send_tab_list_entry(self, &other);
+            if let Some(me) = world.get_player_by_id(self.entity_id())
+                && let Some(tracked) = world.entity_tracker.get_tracked_entity(other.entity_id())
+            {
+                tracked.update_player(&me, &world);
+            }
+        }
     }
 
     pub fn can_see(&self, other_id: &uuid::Uuid) -> bool {
