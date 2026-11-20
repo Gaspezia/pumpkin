@@ -4281,6 +4281,22 @@ impl World {
         self.run_explosion(&explosion);
     }
 
+    /// Like [`Self::explode`], optionally lighting fires in the crater (Bukkit `setFire`).
+    pub fn explode_with_fire(
+        self: &Arc<Self>,
+        position: Vector3<f64>,
+        power: f32,
+        interaction: ExplosionInteraction,
+        create_fire: bool,
+    ) {
+        let mut explosion =
+            Explosion::new(power, position, self.get_block_interaction(interaction));
+        if create_fire {
+            explosion = explosion.with_fire();
+        }
+        self.run_explosion(&explosion);
+    }
+
     /// Explodes at `position` with `source` as the entity that exploded.
     pub fn explode_from(
         self: &Arc<Self>,
