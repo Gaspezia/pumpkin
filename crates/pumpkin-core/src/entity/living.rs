@@ -4492,6 +4492,20 @@ impl EntityBase for LivingEntity {
                     .is_some_and(super::player::Player::is_sleeping)
             {
                 caller.damage(caller, 1.0, DamageType::IN_WALL);
+            } else if is_player {
+                // Vanilla `LivingEntity.baseTick`: only players take world border damage.
+                let pos = self.entity.pos.load();
+                let amount = self
+                    .entity
+                    .world
+                    .load()
+                    .worldborder
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .outside_damage(pos.x, pos.z);
+                if let Some(amount) = amount {
+                    caller.damage(caller, amount, DamageType::OUTSIDE_BORDER);
+                }
             }
 
             // Players push from `World::tick` once all players ticked
@@ -4565,20 +4579,6 @@ impl EntityBase for LivingEntity {
                 .clone();
             if let Some(item) = item_in_use.as_ref() {
                 server
-            } else if is_player {
-                // Vanilla `LivingEntity.baseTick`: only players take world border damage.
-                let pos = self.entity.pos.load();
-                let amount = self
-                    .entity
-                    .world
-                    .load()
-                    .worldborder
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .outside_damage(pos.x, pos.z);
-                if let Some(amount) = amount {
-                    caller.damage(caller, amount, DamageType::OUTSIDE_BORDER);
-                }
                     .item_registry
                     .on_use_tick(item, caller, remaining_use_ticks);
             }
