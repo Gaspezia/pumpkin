@@ -19,6 +19,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 21 | Laisse pour les plugins v0.2 (`set-leash-holder`, `get-leash-holder`, `get-leashed-entities`), forme de la PR upstream #3927 | branche `gaspezia-patch/entity-leash` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 22 | `entity-change-block-event` tire a l'atterrissage d'un bloc qui tombe | branche `gaspezia-patch/falling-block-change-event` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 23 | `entity-explode-event` porte les blocs a detruire (reductibles) et le proprietaire | branche `gaspezia-patch/explosion-blocks` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 24 | `entity.get-owner` / `set-owner` et `world.spawn-primed-tnt` | branche `gaspezia-patch/entity-owner` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -211,6 +212,12 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Pourquoi : BedWars ne laisse partir que les blocs poses par un joueur (laine, toile, feuilles) et jamais un lit ; le mode annulait l'explosion et recassait une sphere a la main, sans la geometrie ni les drops vanilla.
 - Fichiers : `crates/pumpkin-core/src/world/explosion.rs`, `world/mod.rs` (`run_explosion`), `plugin/api/events/entity/entity_explode.rs`, `event.wit`, `crates/pumpkin-wasm-host-v0_2/src/events/entity.rs`.
 - Limites : seules les entrees d'origine comptent (un bloc ajoute est ignore) ; les blocs sont calcules avant les degats aux entites (ordre vanilla) ; `block-explode-event` n'est pas change ; pas de test unitaire dedie (la logique est un `retain`).
+### Patch 24 : proprietaire d'une entite et TNT amorcee
+
+- Quoi : `entity.get-owner() -> option<entity>` et `entity.set-owner(option<entity>) -> bool` (projectiles et TNT amorcee ; faux pour les autres entites), `world.spawn-primed-tnt(pos, fuse-ticks, owner) -> option<entity>`. Cote cœur : `EntityBase::set_owner_entity`, `ProjectileOwner::set_owner`, `get_owner_entity` implemente pour `TNTEntity`.
+- Pourquoi : BedWars credite les morts par TNT, boule de feu ou fleche a leur proprietaire (`TNTPrimed.getSource`, `Projectile.getShooter`) ; le mode tenait une table id -> uuid, aveugle aux fleches.
+- Fichiers : `crates/pumpkin-core/src/entity/mod.rs`, `tnt.rs`, `projectile/owner.rs`, `crates/pumpkin-plugin-wit/v0.2/world.wit`, `crates/pumpkin-wasm-host-v0_2/src/entity.rs` et `world.rs`.
+- Limites : pas de test automatique ; `spawn-primed-tnt` utilise la puissance par defaut (4) et ne lui donne pas de vitesse initiale ; un `EntitySpawnEvent` annule renvoie `none`.
 - Proposable upstream : oui.
 
 ## Journal des mises a jour
@@ -237,3 +244,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 21 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 22 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 23 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 24 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
