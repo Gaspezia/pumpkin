@@ -387,6 +387,12 @@ impl ToFromWasmEvent
         })
     }
 
+            blocks: self
+                .blocks
+                .iter()
+                .map(|pos| crate::events::to_wasm_block_position(*pos))
+                .collect(),
+            owner_id: self.owner_id,
     fn from_wasm_event(event: Event, _state: &mut PluginHostState) -> Self {
         match event {
             Event::EntityExplodeEvent(data) => Self {
@@ -401,6 +407,12 @@ impl ToFromWasmEvent
             },
             _ => panic!("unexpected event type"),
         }
+                blocks: data
+                    .blocks
+                    .into_iter()
+                    .map(crate::events::from_wasm_block_position)
+                    .collect(),
+                owner_id: data.owner_id,
     }
 }
 

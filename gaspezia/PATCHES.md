@@ -14,6 +14,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
+| 23 | `entity-explode-event` porte les blocs a detruire (reductibles) et le proprietaire | branche `gaspezia-patch/explosion-blocks` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -171,6 +172,15 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : le retrait/renvoi de la tab list n'est fait que pour les clients Java ; un joueur cache qui rejoint apres coup, ou change de monde, reste soumis au filtre du suivi mais sa ligne de tab list peut reapparaitre. Pas de test de bout en bout (aucun joueur factice dans le cœur).
 - Proposable upstream : oui.
 
+
+### Patch 23 : blocs et proprietaire dans `entity-explode-event`
+
+- Quoi : `entity-explode-event-data` porte `blocks: list<block-pos>` (blocs que l'explosion va detruire, calcules avant l'evenement par `Explosion::get_blocks_to_destroy`) et `owner-id: option<s32>` (entite creditee : celui qui a allume la TNT, tire la boule de feu). Le plugin retire des entrees pour epargner des blocs ; `Explosion::explode` recoit l'ensemble reduit et ne recalcule rien. Vide pour `interaction::none`.
+- Pourquoi : BedWars ne laisse partir que les blocs poses par un joueur (laine, toile, feuilles) et jamais un lit ; le mode annulait l'explosion et recassait une sphere a la main, sans la geometrie ni les drops vanilla.
+- Fichiers : `crates/pumpkin-core/src/world/explosion.rs`, `world/mod.rs` (`run_explosion`), `plugin/api/events/entity/entity_explode.rs`, `event.wit`, `crates/pumpkin-wasm-host-v0_2/src/events/entity.rs`.
+- Limites : seules les entrees d'origine comptent (un bloc ajoute est ignore) ; les blocs sont calcules avant les degats aux entites (ordre vanilla) ; `block-explode-event` n'est pas change ; pas de test unitaire dedie (la logique est un `retain`).
+- Proposable upstream : oui.
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -190,3 +200,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 15 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 16 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 18 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 23 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
