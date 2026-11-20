@@ -3609,6 +3609,46 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         run_blocking(accessor, move || player.set_food_level(level)).await
     }
 
+    async fn launch_fireball(
+        accessor: &Accessor<PluginHostState, Self>,
+        player: Resource<Player>,
+        power: f32,
+        incendiary: bool,
+        speed: f64,
+    ) -> wasmtime::Result<Option<Resource<crate::pumpkin::plugin::world::Entity>>> {
+        use pumpkin_core::entity::projectile::fireball::FireballEntity;
+        let player = accessor.get_res(&player)?;
+        let launched = run_blocking(accessor, move || {
+            let world = player.world();
+            let (yaw, pitch) = player.rotation();
+            let (yaw, pitch) = (f64::from(yaw.to_radians()), f64::from(pitch.to_radians()));
+            let direction = pumpkin_util::math::vector3::Vector3::new(
+                -yaw.sin() * pitch.cos(),
+                -pitch.sin(),
+                yaw.cos() * pitch.cos(),
+            );
+            let mut pos = player.position();
+            pos.y += player.get_entity().get_eye_height();
+            let base = pumpkin_core::entity::Entity::new(
+                world.clone(),
+                pos,
+                &pumpkin_data::entity::EntityType::FIREBALL,
+            );
+            let fireball = FireballEntity::new_shot(base, player.get_entity(), direction);
+            fireball.set_explosion_power(power);
+            fireball.set_incendiary(incendiary);
+            if speed > 0.0 {
+                fireball.set_speed(speed, direction);
+            }
+            let fireball: Arc<dyn pumpkin_core::entity::EntityBase> = Arc::new(fireball);
+            world
+                .spawn_entity(Arc::clone(&fireball))
+                .then_some(fireball)
+        })
+        .await?;
+        launched.map(|entity| accessor.add_res(entity)).transpose()
+    }
+
     async fn set_experience_level(
         accessor: &Accessor<PluginHostState, Self>,
         player: Resource<Player>,
