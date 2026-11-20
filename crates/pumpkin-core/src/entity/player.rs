@@ -1,4 +1,5 @@
 pub mod advancement;
+mod attack_legacy;
 pub mod client_move;
 pub mod client_push;
 mod shoulders;
@@ -1586,6 +1587,11 @@ impl Player {
             return;
         }
         let world = self.world();
+        // `[pvp] combat = "legacy_1_8"`: the 1.8 melee rules (no spin attacks there).
+        if world.combat_mode().is_legacy() && !self.living_entity.is_auto_spin_attack() {
+            self.attack_legacy(victim);
+            return;
+        }
         let Some(server) = world.server.upgrade() else {
             return;
         };
@@ -3418,6 +3424,9 @@ impl Player {
             }
         }
         self.last_attacked_ticks.fetch_add(1, Ordering::Relaxed);
+        if server.advanced_config.pvp.combat.is_legacy() {
+            self.hide_attack_gauge();
+        }
 
         self.living_entity.tick(self, server);
 
