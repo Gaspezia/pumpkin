@@ -260,6 +260,38 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-core/src/entity/combat_legacy.rs` (formules : `base_knockback`, `extra_knockback`, `jump_motion`...), `entity/combat_legacy_hit.rs` (nouveau), `entity/player/attack_legacy.rs`, aiguillages dans `LivingEntity::deal_default_knockback` et `Player::jump`. Les evenements de plugin `entity-knockback*` et `player-velocity` sont tires comme sur le chemin moderne (le recul supplementaire est un evenement a part, comme avant).
 - Limites : `sin` et `cos` exacts au lieu de la table de 1.8 (ecart < 1e-4, sous le critere de 2,5e-4 du banc) ; le fantome n'est pas verifie tick par tick (le banc mesurera) ; le recul d'explosion, de canne et des fleches (Frappe) reste a faire (lots L6, L7, L9) ; le client 26.x decide seul de son ralentissement et de la relance de son sprint.
 
+### Patch 30 : `hide-player` sans fuite de spawn
+
+- Quoi : `TrackedEntity::update_player_in_view` relit la liste des caches (`broadcast_to_player`) sous le verrou d'ecriture de `seen_by` au moment d'inserer l'observateur, puis une derniere fois apres l'envoi du spawn (`add_pairing`) : un `hide_player` qui passait entre la premiere verification et l'insertion trouvait `seen_by` vide, son `remove_player` ne faisait rien et le spawn partait quand meme. Tout chemin qui (re)cree une entite chez un observateur passe par ce point (ajout d'entite, changement de chunk, respawn, repairage apres changement de monde, passage en spectateur, teleportation).
+- Pourquoi : Loup-Garou voyait 7 `spawn_entity` de joueurs caches chez un mort passe spectateur et teleporte.
+- Fichiers : `crates/pumpkin-core/src/world/entity_tracker.rs`.
+- Limites : la lecture du code montre que tous les chemins de spawn de joueur passaient deja par le filtre ; la fuite retrouvee est cette course (le passage en spectateur concentre les evenements dans le meme tick). Non reproduite en banc, pas de test unitaire (aucun joueur factice dans le coeur). La ligne de tab list envoyee a un joueur qui rejoint reste inchangee.
+- Proposable upstream : oui.
+
+### Patch 31 : particules avec donnees (`spawn-particle-data`, `spawn-item-particle`)
+
+- Quoi : `particles.wit` gagne `dust-data`, `dust-transition-data`, `block-state-data`, `color-data` et la variante `particle-data` (`dust`, `dust-color-transition`, `block-state`, `color`). `world` gagne `spawn-particle-data(data, pos, offset, max-speed, count) -> result<_, string>` et `spawn-item-particle(item-id, ...) -> result<_, string>`. L'hote encode les options (couleur RGB ou ARGB en entier 32 bits, taille en `f32`, etat de bloc en VarInt) ; `block-state` n'accepte que `block`, `block-marker`, `falling-dust`, `dust-pillar`, `block-crumble` et `color` que `entity-effect`, `tinted-leaves`, `flash` (erreur sinon). `World::spawn_particle_with_data` envoie le paquet.
+- Pourquoi : `spawn-particle` envoyait toujours des donnees vides : `dust` (la particule la plus utilisee des montures), `block`, `item` et `entity-effect` etaient invalides. Additif : `spawn-particle` et l'enumeration `particle` ne changent pas, les plugins compiles restent valides.
+- Fichiers : `crates/pumpkin-plugin-wit/v0.2/particles.wit`, `world.wit`, `crates/pumpkin-wasm-host-v0_2/src/world.rs` (encodeur pur + test), `crates/pumpkin-core/src/world/mod.rs`.
+- Limites : version par monde seulement (pas de variante par joueur) ; `item` sans composants (une pile de 1) ; `effect`, `instant-effect`, `trail`, `vibration`, `sculk-charge`, `shriek` restent non envoyables avec donnees.
+- Proposable upstream : oui.
+
+### Patch 32 : `count-item` accepte `minecraft:`
+
+- Quoi : `Inventory::count_item` reutilise `item_id_matches` (comme `remove-by-id`) : l'identifiant est accepte avec ou sans espace de noms.
+- Pourquoi : `count-item("minecraft:iron_ingot")` rendait 0 (BedWars).
+- Fichiers : `crates/pumpkin-wasm-host-v0_2/src/inventory.rs` (+ test).
+- Limites : aucune.
+- Proposable upstream : oui.
+
+### Patch 33 : chaine de degats 1.8 (L4)
+
+- Quoi : en mode `legacy_1_8`, l'armure reduit de 4 % par point (`d x (25 - points)/25`, sans robustesse), la Protection se calcule comme en 1.8 (points `floor((6 + niv^2)/3 x k)` par piece : Protection 0,75, Feu 1,25 contre le feu, Chute 2,5 contre les chutes, Explosion 1,5, Projectile 1,5 ; somme plafonnee a 25 puis tirage `ceil(s/2) + rand[0, floor(s/2)]` plafonne a 20 ; l'apercu envoye aux plugins prend la moyenne, sans tirer) et l'epuisement par coup recu vaut 0,3 (0 pour les sources qui ignorent l'armure). Fonctions pures dans `combat_legacy.rs` (`armor_reduced`, `resistance_reduced`, `protection_points`, `protection_roll`, `protection_mean`, `protection_reduced`, `block_reduced`, `armor_wear`, `invulnerability`), testees contre D5, D6, D7, D8, D9 et P5.
+- Pourquoi : les kits d'Arena portent des armures en diamant ; avec la robustesse moderne le diamant reduit bien plus qu'en 1.8.
+- Fichiers : `crates/pumpkin-core/src/entity/combat_legacy.rs`, `entity/living.rs` (branches dans `get_damage_after_armor_absorb`, `magic_reduced_damage`, epuisement).
+- Limites : la fenetre d'invulnerabilite du moderne (compteur > 10, seul le surplus passe, brut memorise apres le casque) est deja la regle 1.8 : inchangee ; l'usure `max(1, floor(d/4))` est deja celle du moderne ; `block_reduced` et `invulnerability` sont prets pour le blocage a l'epee (L5, non fait : composants `consumable`/`attack_range` et utilisation de 72000 ticks restent a faire) ; les sources « sans armure » suivent la balise `bypasses_armor` moderne ; la Resistance garde le code moderne (meme formule).
+- Propre au fork (jamais propose upstream).
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -290,3 +322,7 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 27 seul, sans fusion upstream) | aucun | - | tests `pumpkin-config` OK |
 | 2026-11-20 | aucun (patch 28 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` `combat_legacy` OK |
 | 2026-11-20 | aucun (patch 29 seul, sans fusion upstream) | aucun | - | clippy + tests `pumpkin-core` `combat_legacy` OK |
+| 2026-11-20 | aucun (patch 30 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` `entity_tracker` OK |
+| 2026-11-20 | aucun (patch 31 seul, sans fusion upstream) | aucun | - | tests `pumpkin-wasm-host-v0_2` OK |
+| 2026-11-20 | aucun (patch 32 seul, sans fusion upstream) | aucun | - | tests `pumpkin-wasm-host-v0_2` OK |
+| 2026-11-20 | aucun (patch 33 seul, sans fusion upstream) | aucun | - | clippy + tests `pumpkin-core` `combat_legacy` OK |
