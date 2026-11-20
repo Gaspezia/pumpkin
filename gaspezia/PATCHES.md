@@ -16,6 +16,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
 | 19 | Degats de la bordure du monde pour les joueurs hors zone de securite (formule vanilla `outside_border`) | branche `gaspezia-patch/world-border-damage` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 20 | `final-damage` et `health` dans `entity-damage-event` et `entity-damage-by-entity-event` | branche `gaspezia-patch/final-damage` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 21 | Laisse pour les plugins v0.2 (`set-leash-holder`, `get-leash-holder`, `get-leashed-entities`), forme de la PR upstream #3927 | branche `gaspezia-patch/entity-leash` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -188,6 +189,13 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-core/src/entity/living.rs` (+ test `preview_final_damage_matches_what_reaches_the_health`), `plugin/api/events/entity/entity_damage*.rs`, `crates/pumpkin-plugin-wit/v0.2/event.wit`, `crates/pumpkin-wasm-host-v0_2/src/events/entity.rs`.
 - Limites : le blocage au bouclier n'est pas previsualise (effets de bord) ; un plugin qui change `damage` dans le premier evenement voit le second recalculer `final-damage` sur le nouveau montant ; `entity-damage-by-block-event` n'a pas les champs ; les entites sans vie (item, orbe) recoivent `final-damage` = `damage` et `health` = 0.
 - Proposable upstream : oui (champ ajoute, changement cassant du WIT v0.2 pour les plugins qui construisent l'enregistrement).
+### Patch 21 : laisse (`set-leash-holder`, `get-leash-holder`, `get-leashed-entities`)
+
+- Quoi : WIT v0.2, ajout seulement, avec les noms et signatures de la PR upstream Pumpkin-MC/Pumpkin#3927 (ouverte, non fusionnee) : `entity.is-leashed() -> bool`, `entity.get-leash-holder() -> option<entity>`, `entity.get-leashed-entities() -> list<entity>` et `mob.set-leash-holder(option<entity>)` (laisse ou, avec `none`, detache). Le code hote est reecrit chez nous : le cœur garde le detenteur en `Weak`, on passe donc par `Entity::get_leash_holder`, et `get-leashed-entities` parcourt les entites et joueurs du monde. `leash_to` / `unleash` du cœur tirent leurs evenements (`PlayerLeashEntityEvent`, `EntityUnleashEvent`) comme d'habitude ; un plugin relit `is-leashed` pour savoir si un gestionnaire a annule.
+- Pourquoi : le largage de coffre de GArena suspend le coffre sous 5 poulets relies par des laisses a un armor stand (`setLeashHolder`).
+- Fichiers : `crates/pumpkin-plugin-wit/v0.2/world.wit`, `crates/pumpkin-wasm-host-v0_2/src/entity.rs` et `mob.rs`. Aucune modification du cœur.
+- Limites : pas de test automatique (aucun composant invite) ; la distance de rupture de la laisse et la chute du detenteur restent celles du cœur ; `unleash` ne fait pas tomber l'objet laisse ; `set-leash-holder` n'est que sur `mob` (comme la PR upstream) : un joueur ou un armor stand ne peut pas etre le laisse.
+- Proposable upstream : sans objet (la PR #3927 existe) ; a la mise a jour, garder la version upstream si elle est fusionnee.
 
 ## Journal des mises a jour
 
@@ -210,3 +218,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 18 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 19 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 20 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 21 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |

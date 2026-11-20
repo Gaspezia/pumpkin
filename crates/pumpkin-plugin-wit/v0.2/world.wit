@@ -486,6 +486,13 @@ interface %world {
         remove-passenger: async func(passenger: entity);
         eject-passengers: async func();
 
+        /// Returns whether this entity is currently leashed to another entity.
+        is-leashed: func() -> bool;
+        /// Returns the entity this entity is leashed to, if any.
+        get-leash-holder: func() -> option<entity>;
+        /// Returns all entities currently leashed to this entity.
+        get-leashed-entities: func() -> list<entity>;
+
         get-bounding-box: func() -> bounding-box;
 
         is-in-water: func() -> bool;
@@ -680,6 +687,9 @@ interface %world {
         set-freeze-ticks: func(ticks: s32);
         /// Returns the number of freeze ticks currently on this entity.
         get-freeze-ticks: func() -> s32;
+
+        /// Sets the entity this mob is leashed to, or clears the leash when `none` is passed.
+        set-leash-holder: func(holder: option<entity>);
     }
 
     /// Result of a raycast operation.
@@ -1108,6 +1118,7 @@ interface %world {
         /// `detonate` = true: the rocket explodes during this call (clients get spawn, metadata, entity event 17, removal).
         /// The explosion deals vanilla damage (5 + 2 x number of explosions, radius 5 blocks; same as Paper): detonate away from players.
         /// Returns `none` if an entity spawn event handler cancels the spawn.
+
         spawn-firework: async func(pos: position, flight-duration: u8, explosions: list<firework-explosion>, detonate: bool) -> option<entity>;
 
         /// Spawns a dropped item entity with the given item stack at the exact position with zero initial velocity.
