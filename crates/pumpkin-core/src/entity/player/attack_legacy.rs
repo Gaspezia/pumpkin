@@ -2,7 +2,7 @@
 //!
 //! Formulas live in [`crate::entity::combat_legacy`]; this file only gathers the inputs from the
 //! player and plays the hit in the packet order of a 1.8 server. Source of the rules: the
-//! 1.8 `EntityPlayer.attackTargetEntityWithCurrentItem` (see `gaspezia/PATCHES.md`, patch 28).
+//! 1.8 `EntityPlayer.attackTargetEntityWithCurrentItem` (see `gaspezia/PATCHES.md`, patches 28 and 29).
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -82,11 +82,13 @@ impl Player {
         }
 
         let victim_type = victim_entity.entity_type;
-        let (mut sharpness, mut smite, mut bane) = (0, 0, 0);
+        let (mut sharpness, mut smite, mut bane, mut knockback_level) = (0, 0, 0, 0);
         if let Some(enchantments) = item_stack.get_data_component::<EnchantmentsImpl>() {
             for (enchantment, level) in enchantments.enchantment.iter() {
                 if **enchantment == Enchantment::SHARPNESS {
                     sharpness = *level;
+                } else if **enchantment == Enchantment::KNOCKBACK {
+                    knockback_level = *level;
                 } else if **enchantment == Enchantment::SMITE
                     && victim_type.has_tag(&tag::EntityType::MINECRAFT_SENSITIVE_TO_SMITE)
                 {
@@ -134,8 +136,29 @@ impl Player {
 
         crate::enchantment::EnchantmentHelper::on_post_attack(self, victim_entity, &item_stack);
 
+        // The extra push needs an accepted hit, a partial one during the invulnerability
+        // included (then nothing is sent and the server-side motion keeps the push).
+        let level = knockback_level + i32::from(attacker_entity.is_sprinting());
+        let knockback_enabled = world
+            .server
+            .upgrade()
+            .is_none_or(|server| server.advanced_config.pvp.knockback);
+        let extra_knockback = level > 0 && knockback_enabled;
+        if extra_knockback {
+            self.push_victim(victim.as_ref(), level, damage);
+        }
+
         // 1.8 order: the victim's velocity first, then the critical animations.
+        if victim.get_player().is_some() && victim_entity.sync_velocity.load(Ordering::SeqCst) {
+            let clamped = combat_legacy::clamp_packet_velocity(victim_entity.velocity.load());
+            victim_entity.velocity.store(clamped);
+        }
         combat::sync_hit_player_velocity(victim.as_ref(), old_movement);
+        if extra_knockback && attacker_entity.is_sprinting() {
+            // The server stops the attacker's sprint after the hit: a new sprint needs a new
+            // START_SPRINTING from the client (the W-tap of 1.8).
+            self.set_sprinting(false);
+        }
 
         if critical {
             Self::broadcast_hit_animation(&world, victim_entity.entity_id, true);
@@ -156,6 +179,53 @@ impl Player {
         self.damage_held_item(durability_cost);
         // 1.8 exhaustion of a landed hit.
         self.add_exhaustion(0.3);
+    }
+
+    /// Extra knockback of an accepted hit (Knockback enchantment, +1 when sprinting): along the
+    /// attacker's yaw, `+0.1` vertical, no resistance. The attacker's server-side motion drops
+    /// to 60 % horizontally, as in 1.8.
+    fn push_victim(&self, victim: &dyn EntityBase, level: i32, damage: f32) {
+        let attacker = &self.living_entity.entity;
+        let victim_entity = victim.get_entity();
+        let yaw = attacker.yaw.load();
+        let strength = f64::from(level) * 0.5;
+        let handled = victim.get_mob().is_some_and(|mob| {
+            mob.mob_knockback(
+                strength,
+                f64::from(yaw.to_radians().sin()),
+                f64::from(-yaw.to_radians().cos()),
+                Some(attacker),
+                damage,
+                false,
+            )
+        });
+        if !handled {
+            let current = victim_entity.velocity.load();
+            let target = combat_legacy::extra_knockback(current, yaw, level);
+            if let Some(knockback) =
+                victim_entity.fire_knockback_events(strength, target - current, Some(attacker))
+            {
+                victim_entity.velocity.store(current + knockback);
+            }
+        }
+        let velocity = attacker.velocity.load();
+        attacker.velocity.store(velocity.multiply(0.6, 1.0, 0.6));
+    }
+
+    /// 1.8 jump of the server-side motion (the "ghost" that the victim's knockback halves): the
+    /// vertical impulse, plus 0.2 along the yaw when sprinting.
+    pub(super) fn jump_legacy(&self) {
+        let entity = &self.living_entity.entity;
+        let boost = self
+            .living_entity
+            .get_effect(&StatusEffect::JUMP_BOOST)
+            .map(|effect| i32::from(effect.amplifier));
+        entity.velocity.store(combat_legacy::jump_motion(
+            entity.velocity.load(),
+            boost,
+            entity.is_sprinting(),
+            entity.yaw.load(),
+        ));
     }
 
     /// Pushes the base attack speed to its maximum so the client cooldown stays full and its

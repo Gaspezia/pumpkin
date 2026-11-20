@@ -4428,6 +4428,10 @@ impl LivingEntity {
         cause: Option<&dyn EntityBase>,
         damage: f32,
     ) {
+        if self.entity.world.load().combat_mode().is_legacy() {
+            self.deal_default_knockback_legacy(caller, position, source, cause, damage);
+            return;
+        }
         let target_pos = self.entity.pos.load();
         let (dx, dz) = if let Some((x, z)) =
             source.and_then(|source| source.hurt_knockback_direction(&self.entity))

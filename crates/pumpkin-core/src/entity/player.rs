@@ -3633,6 +3633,9 @@ impl Player {
     }
 
     pub fn jump(&self) {
+        if self.world().combat_mode().is_legacy() {
+            self.jump_legacy();
+        }
         self.stats
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
