@@ -1581,6 +1581,10 @@ impl Player {
 
     #[expect(clippy::too_many_lines)]
     pub fn attack(&self, victim: &Arc<dyn EntityBase>) {
+        // A spectator cannot hit anything (vanilla `handleAttack`); every attack path ends here.
+        if !may_attack(self.gamemode.load()) {
+            return;
+        }
         let world = self.world();
         let Some(server) = world.server.upgrade() else {
             return;
@@ -9763,5 +9767,23 @@ mod tests {
         write_last_death_location(&mut nbt, &"Not A Valid Dimension!".to_string(), &pos);
 
         assert_eq!(read_last_death_location(&nbt), None);
+    }
+}
+
+/// Whether a player in `mode` may attack (spectators may not).
+const fn may_attack(mode: GameMode) -> bool {
+    !matches!(mode, GameMode::Spectator)
+}
+
+#[cfg(test)]
+mod attack_gate_tests {
+    use super::{GameMode, may_attack};
+
+    #[test]
+    fn only_spectators_cannot_attack() {
+        assert!(!may_attack(GameMode::Spectator));
+        for mode in [GameMode::Survival, GameMode::Creative, GameMode::Adventure] {
+            assert!(may_attack(mode));
+        }
     }
 }
