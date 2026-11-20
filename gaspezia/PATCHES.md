@@ -15,6 +15,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
+| 14 | Un spectateur ne peut pas attaquer (garde `may_attack` dans `Player::attack`, commune a Java, Bedrock et aux plugins) | branche `gaspezia-patch/spectator-no-attack` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 13 | `world.create-explosion` : le drapeau `create-fire` pose du feu dans le cratere (regle vanilla) | branche `gaspezia-patch/explosion-fire` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 12 | `entity.set-velocity` d'une entite non joueuse diffuse la vitesse aux clients (comme le `hurtMarked` de Paper) | branche `gaspezia-patch/entity-velocity-broadcast` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 8 | `play-sound`, `play-sound-at` et `stop-sound` de l'hote v0.2 : correspondance fiable entre le variant WIT et `pumpkin_data::sound::Sound` (plus de trap sur tout son) | branche `gaspezia-patch/plugin-play-sound` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
@@ -131,6 +132,15 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : les autres appelants (`explode`, `explode_from`) ne posent pas de feu (comportement inchange).
 - Proposable upstream : oui.
 
+
+### Patch 14 : un spectateur n'attaque pas
+
+- Quoi : `Player::attack` (`pumpkin-core/src/entity/player.rs`) sort immediatement si le joueur est en `GameMode::Spectator`, comme le `handleAttack` vanilla. Placee dans `attack` plutot que dans `net/java/play/attack.rs` : tous les chemins (paquet Attack, Interact, transaction Bedrock) y passent.
+- Pourquoi : un joueur elimine reste spectateur et pouvait quand meme frapper et repousser joueurs et mobs.
+- Fichiers : `crates/pumpkin-core/src/entity/player.rs` (+ test `only_spectators_cannot_attack` sur la fonction pure `may_attack`).
+- Limites : le test porte sur la regle, pas sur un paquet reel.
+- Proposable upstream : oui.
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -146,3 +156,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 17 seul, sans fusion upstream) | aucun | - | `cargo clippy -p pumpkin-wasm-host` OK |
 | 2026-11-20 | aucun (patch 12 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 13 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 14 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
