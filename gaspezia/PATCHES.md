@@ -14,6 +14,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 5 | Feux d'artifice pour les plugins v0.2 : `world.spawn-firework` (fusee avec explosions colorees, explosion immediate optionnelle) | branche `gaspezia-patch/plugin-spawn-firework` | aucune (proposable) | PR Gaspezia/pumpkin #5 | 2026-11-16 |
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
+| 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 8 | `play-sound`, `play-sound-at` et `stop-sound` de l'hote v0.2 : correspondance fiable entre le variant WIT et `pumpkin_data::sound::Sound` (plus de trap sur tout son) | branche `gaspezia-patch/plugin-play-sound` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
 | 9 | `custom_name` d'un objet garde ses styles (gras, couleurs) a l'encodage reseau : `CustomNameImpl` encode comme `LoreImpl` | branche `gaspezia-patch/custom-name-styles` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
 | 10 | `display.set-interpolation-start` toujours renvoye au client (champ force comme vanilla) : `SynchedEntityData::set_forced` | branche `gaspezia-patch/forced-interpolation` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
@@ -103,6 +104,15 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : les deux ci-dessus. Journalisation seule, aucun changement de comportement.
 - Proposable upstream : oui.
 
+
+### Patch 17 : plus de double suppression des ressources `own`
+
+- Quoi : le scheduler (`pumpkin-wasm-host/src/scheduler.rs`, branches v0_1 et v0_2) refaisait `resource_table.delete::<Arc<Server>>(new_own(rep))` apres `handle_task`. Le handle est passe en `own` : l'invite le libere (l'hote le retire de la table via `drop`). Si l'invite creait une ressource entre-temps (entite de `spawn-entity`, flux wasi...), elle reprenait la case et ce second delete la DETRUISAIT ; l'appel suivant trappait (`resource not present`). Meme motif retire pour `on-unload` (contexte, `runtime.rs`) et `handle-generate-phase` (`ChunkBuffer`, hotes v0_1 et v0_2). Non touches : le dispatch d'evenements (il ne supprime que les ressources du RETOUR de l'invite, ou en cas d'echec avant l'appel) et les chemins d'erreur avant l'appel de `mob.rs`.
+- Preuve (banc du moteur de modeles) : 4 traps sur 4 avec l'ancien code, 0 sur 3 sans la liberation.
+- Fichiers : `crates/pumpkin-wasm-host/src/scheduler.rs`, `runtime.rs`, `crates/pumpkin-wasm-host-v0_1/src/world.rs`, `crates/pumpkin-wasm-host-v0_2/src/world.rs`.
+- Limites : pas de test unitaire (il faudrait un composant invite compile pour reproduire la reutilisation de case) ; si l'invite trappe avant de liberer le handle, celui-ci reste dans la table (fuite negligeable, le store est mort).
+- Proposable upstream : oui.
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
@@ -115,3 +125,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-19 | aucun (patch 10 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-19 | aucun (patch 4 : ajout de `memory-working-set`, sans fusion upstream) | aucun | - | tests `pumpkin-wasm-host-v0_2` OK |
 | 2026-11-19 | aucun (patch 11 seul, sans fusion upstream) | aucun | - | `cargo check` des crates touchees OK |
+| 2026-11-20 | aucun (patch 17 seul, sans fusion upstream) | aucun | - | `cargo clippy -p pumpkin-wasm-host` OK |
