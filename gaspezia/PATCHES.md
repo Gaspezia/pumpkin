@@ -15,6 +15,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 6 | Dialogs utilisables depuis un plugin WASM v0.2 (serialiseur NBT, cles d'inputs, lecture du clic 26.2+) | branche `gaspezia-patch/plugin-dialog-nbt` | aucune (proposable) | PR Gaspezia/pumpkin #6 | 2026-11-16 |
 | 7 | `Scoreboard::update_team` conserve les membres de l'equipe (la regle de collision serveur disparaissait apres le 1er `update_team`) | branche `gaspezia-patch/update-team-keeps-members` | aucune (proposable) | PR Gaspezia/pumpkin #7 | 2026-11-17 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
+| 12 | `entity.set-velocity` d'une entite non joueuse diffuse la vitesse aux clients (comme le `hurtMarked` de Paper) | branche `gaspezia-patch/entity-velocity-broadcast` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 8 | `play-sound`, `play-sound-at` et `stop-sound` de l'hote v0.2 : correspondance fiable entre le variant WIT et `pumpkin_data::sound::Sound` (plus de trap sur tout son) | branche `gaspezia-patch/plugin-play-sound` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
 | 9 | `custom_name` d'un objet garde ses styles (gras, couleurs) a l'encodage reseau : `CustomNameImpl` encode comme `LoreImpl` | branche `gaspezia-patch/custom-name-styles` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
 | 10 | `display.set-interpolation-start` toujours renvoye au client (champ force comme vanilla) : `SynchedEntityData::set_forced` | branche `gaspezia-patch/forced-interpolation` | aucune (proposable) | PR Gaspezia/pumpkin (lot du 2026-11-19) | 2026-11-19 |
@@ -111,6 +112,13 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Preuve (banc du moteur de modeles) : 4 traps sur 4 avec l'ancien code, 0 sur 3 sans la liberation.
 - Fichiers : `crates/pumpkin-wasm-host/src/scheduler.rs`, `runtime.rs`, `crates/pumpkin-wasm-host-v0_1/src/world.rs`, `crates/pumpkin-wasm-host-v0_2/src/world.rs`.
 - Limites : pas de test unitaire (il faudrait un composant invite compile pour reproduire la reutilisation de case) ; si l'invite trappe avant de liberer le handle, celui-ci reste dans la table (fuite negligeable, le store est mort).
+
+### Patch 12 : `set-velocity` diffuse la vitesse
+
+- Quoi : l'hote v0.2 (`entity.rs`, `set_velocity`) faisait `velocity.store(..)` seul : le client ne recevait la vitesse qu'au prochain envoi periodique, d'ou des arcs saccades (moutons lances, missiles, recul). Il appelle maintenant `Entity::set_velocity`, qui stocke puis envoie `CEntityVelocity` aux observateurs (ou `send_hurt_velocity` pour un joueur), comme l'hote joueur.
+- Pourquoi : un mode qui pose une vitesse a chaque tick ou lance une entite en arc obtenait 0,7 a 4 paquets de vitesse par seconde au lieu d'un par tick.
+- Fichiers : `crates/pumpkin-wasm-host-v0_2/src/entity.rs` ; test `set_velocity_is_sent_to_watchers` dans `crates/pumpkin-core/src/entity/mod.rs`.
+- Limites : un envoi par appel (pas de regroupement par tick).
 - Proposable upstream : oui.
 
 ## Journal des mises a jour
@@ -126,3 +134,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-19 | aucun (patch 4 : ajout de `memory-working-set`, sans fusion upstream) | aucun | - | tests `pumpkin-wasm-host-v0_2` OK |
 | 2026-11-19 | aucun (patch 11 seul, sans fusion upstream) | aucun | - | `cargo check` des crates touchees OK |
 | 2026-11-20 | aucun (patch 17 seul, sans fusion upstream) | aucun | - | `cargo clippy -p pumpkin-wasm-host` OK |
+| 2026-11-20 | aucun (patch 12 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
