@@ -109,6 +109,8 @@ impl ToFromWasmEvent for EntityDamageEvent {
             entity_id: self.entity_id,
             damage: self.damage,
             damage_type: to_wit_damage_type(&self.damage_type),
+            final_damage: self.final_damage,
+            health: self.health,
             cancelled: self.cancelled,
         })
     }
@@ -119,6 +121,8 @@ impl ToFromWasmEvent for EntityDamageEvent {
                 entity_id: data.entity_id,
                 damage: data.damage,
                 damage_type: from_wit_damage_type(data.damage_type),
+                final_damage: data.final_damage,
+                health: data.health,
                 cancelled: data.cancelled,
             },
             _ => panic!("unexpected event type"),
@@ -857,6 +861,8 @@ impl ToFromWasmEvent for EntityDamageByEntityEvent {
             damager_id: self.damager_id,
             damage: self.damage,
             cause: self.cause.clone(),
+            final_damage: self.final_damage,
+            health: self.health,
             cancelled: self.cancelled,
         })
     }
@@ -876,6 +882,8 @@ impl ToFromWasmEvent for EntityDamageByEntityEvent {
                 damager_id: data.damager_id,
                 damage: data.damage,
                 cause: data.cause,
+                final_damage: data.final_damage,
+                health: data.health,
                 cancelled: data.cancelled,
             },
             _ => panic!("unexpected event type"),

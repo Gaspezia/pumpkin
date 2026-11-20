@@ -42,9 +42,22 @@ impl Worldborder {
             portal_teleport_boundary: 29_999_984,
             warning_blocks,
             warning_time,
-            damage_per_block: 0.0,
-            buffer: 0.0,
+            // Vanilla defaults (`WorldBorder.DEFAULT_DAMAGE_PER_BLOCK` and `DEFAULT_SAFE_ZONE`).
+            damage_per_block: 0.2,
+            buffer: 5.0,
         }
+    }
+
+    /// Damage a player standing at (`x`, `z`) takes this tick, as vanilla
+    /// `LivingEntity.baseTick`: `max(1, floor(-(distance + safe zone) * damage per block))`
+    /// once past the safe zone.
+    #[must_use]
+    pub fn outside_damage(&self, x: f64, z: f64) -> Option<f32> {
+        let past_safe_zone = self.get_distance_to_border(x, z) + f64::from(self.buffer);
+        if past_safe_zone >= 0.0 || self.damage_per_block <= 0.0 {
+            return None;
+        }
+        Some(((-past_safe_zone * f64::from(self.damage_per_block)).floor() as f32).max(1.0))
     }
 
     pub fn init_client(&self, client: &JavaClient) {
@@ -271,6 +284,23 @@ mod tests {
         let border = Worldborder::new(0.5, 0.5, 0.5, 0, 5, 300);
 
         assert_eq!(border.clamp_block(100, -100), (0, 0));
+    }
+
+    #[test]
+    fn border_damage_follows_the_vanilla_formula() {
+        let border = centered_border(10.0);
+        // Inside, and inside the 5 block safe zone: no damage.
+        assert_eq!(border.outside_damage(0.0, 0.0), None);
+        assert_eq!(border.outside_damage(9.9, 0.0), None);
+        // 5 blocks past the edge is the edge of the safe zone.
+        assert_eq!(border.outside_damage(10.0, 0.0), None);
+        // 6 blocks past the edge: 1 block into the damage zone, 0.2 floors up to the minimum of 1.
+        assert_eq!(border.outside_damage(11.0, 0.0), Some(1.0));
+        // 30 blocks into the damage zone at 0.2 per block: 6.
+        assert_eq!(border.outside_damage(40.0, 0.0), Some(6.0));
+        let mut off = centered_border(10.0);
+        off.damage_per_block = 0.0;
+        assert_eq!(off.outside_damage(500.0, 0.0), None);
     }
 
     #[test]
