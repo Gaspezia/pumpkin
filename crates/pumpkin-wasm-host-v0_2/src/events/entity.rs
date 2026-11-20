@@ -387,6 +387,12 @@ impl ToFromWasmEvent
             entity_id: self.entity_id,
             position: to_wasm_position(self.position),
             yield_rate: self.yield_rate,
+            blocks: self
+                .blocks
+                .iter()
+                .map(|pos| crate::events::to_wasm_block_position(*pos))
+                .collect(),
+            owner_id: self.owner_id,
             cancelled: self.cancelled,
         })
     }
@@ -401,6 +407,12 @@ impl ToFromWasmEvent
                     data.position.2,
                 ),
                 yield_rate: data.yield_rate,
+                blocks: data
+                    .blocks
+                    .into_iter()
+                    .map(crate::events::from_wasm_block_position)
+                    .collect(),
+                owner_id: data.owner_id,
                 cancelled: data.cancelled,
             },
             _ => panic!("unexpected event type"),

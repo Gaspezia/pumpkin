@@ -341,6 +341,12 @@ impl<'a> Explosion<'a> {
     }
 
     /// Mirrors `ServerExplosion.isSmall`.
+    /// Whether running this explosion reads the world's blocks (anything but `Keep`).
+    #[must_use]
+    pub const fn touches_blocks(&self) -> bool {
+        !matches!(self.block_interaction, BlockInteraction::Keep)
+    }
+
     #[must_use]
     pub const fn is_small(&self) -> bool {
         self.power < 2.0 || matches!(self.block_interaction, BlockInteraction::Keep)
@@ -372,7 +378,7 @@ impl<'a> Explosion<'a> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn get_blocks_to_destroy(
+    pub(crate) fn get_blocks_to_destroy(
         &self,
         world: &World,
     ) -> FxHashMap<BlockPos, (&'static Block, &'static BlockState)> {
@@ -703,13 +709,19 @@ impl<'a> Explosion<'a> {
     }
 
     /// Returns the removed block count
-    pub fn explode(&self, world: &Arc<World>) -> u32 {
+    /// Runs the explosion. `blocks` is the (possibly plugin-trimmed) block set from
+    /// [`Self::get_blocks_to_destroy`]; `None` computes it here.
+    pub fn explode(
+        &self,
+        world: &Arc<World>,
+        blocks: Option<FxHashMap<BlockPos, (&'static Block, &'static BlockState)>>,
+    ) -> u32 {
         self.damage_entities(world);
 
         match self.block_interaction {
             BlockInteraction::Keep => 0,
             BlockInteraction::TriggerBlock => {
-                let blocks = self.get_blocks_to_destroy(world);
+                let blocks = blocks.unwrap_or_else(|| self.get_blocks_to_destroy(world));
                 for (pos, (block, _state)) in &blocks {
                     let pumpkin_block = world.block_registry.get_pumpkin_block(block.id);
                     if let Some(pumpkin_block) = pumpkin_block {
@@ -741,7 +753,7 @@ impl<'a> Explosion<'a> {
                     return 0;
                 }
 
-                let blocks = self.get_blocks_to_destroy(world);
+                let blocks = blocks.unwrap_or_else(|| self.get_blocks_to_destroy(world));
                 let decay_drops = self.block_interaction == BlockInteraction::DestroyWithDecay;
                 let explosion_radius = decay_drops.then_some(self.power);
 

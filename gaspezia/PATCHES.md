@@ -18,6 +18,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 20 | `final-damage` et `health` dans `entity-damage-event` et `entity-damage-by-entity-event` | branche `gaspezia-patch/final-damage` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 21 | Laisse pour les plugins v0.2 (`set-leash-holder`, `get-leash-holder`, `get-leashed-entities`), forme de la PR upstream #3927 | branche `gaspezia-patch/entity-leash` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 22 | `entity-change-block-event` tire a l'atterrissage d'un bloc qui tombe | branche `gaspezia-patch/falling-block-change-event` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
+| 23 | `entity-explode-event` porte les blocs a detruire (reductibles) et le proprietaire | branche `gaspezia-patch/explosion-blocks` | aucune (proposable) | PR Gaspezia/pumpkin (lot 4 du 2026-11-20) | 2026-11-20 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
 | 17 | L'hote ne supprime plus une seconde fois les ressources `own` passees a l'invite (`handle-task`, `on-unload`, `handle-generate-phase`) : fin des traps `resource not present` | branche `gaspezia-patch/scheduler-no-double-delete` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
 | 16 | `left-click-block` en ADVENTURE tire depuis l'animation du bras (parite Paper `handleAnimate`) | branche `gaspezia-patch/left-click-from-swing` | aucune (proposable) | PR Gaspezia/pumpkin (lot 2 du 2026-11-20) | 2026-11-20 |
@@ -204,6 +205,12 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-core/src/entity/falling.rs`. WIT inchangee (l'enregistrement existait deja).
 - Source : l'idee (evenement a l'atterrissage) existe dans le fork ArkFlame/Kabocha (GPL v3, `falling.rs`) ; le code est reecrit ici, sans copie, sur le modele de `pick_up_block.rs`.
 - Limites : pas de test unitaire (la boucle de tick demande un monde complet) ; le nom du bloc est celui apres solidification (poudre -> beton).
+### Patch 23 : blocs et proprietaire dans `entity-explode-event`
+
+- Quoi : `entity-explode-event-data` porte `blocks: list<block-pos>` (blocs que l'explosion va detruire, calcules avant l'evenement par `Explosion::get_blocks_to_destroy`) et `owner-id: option<s32>` (entite creditee : celui qui a allume la TNT, tire la boule de feu). Le plugin retire des entrees pour epargner des blocs ; `Explosion::explode` recoit l'ensemble reduit et ne recalcule rien. Vide pour `interaction::none`.
+- Pourquoi : BedWars ne laisse partir que les blocs poses par un joueur (laine, toile, feuilles) et jamais un lit ; le mode annulait l'explosion et recassait une sphere a la main, sans la geometrie ni les drops vanilla.
+- Fichiers : `crates/pumpkin-core/src/world/explosion.rs`, `world/mod.rs` (`run_explosion`), `plugin/api/events/entity/entity_explode.rs`, `event.wit`, `crates/pumpkin-wasm-host-v0_2/src/events/entity.rs`.
+- Limites : seules les entrees d'origine comptent (un bloc ajoute est ignore) ; les blocs sont calcules avant les degats aux entites (ordre vanilla) ; `block-explode-event` n'est pas change ; pas de test unitaire dedie (la logique est un `retain`).
 - Proposable upstream : oui.
 
 ## Journal des mises a jour
@@ -229,3 +236,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 20 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 21 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
 | 2026-11-20 | aucun (patch 22 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |
+| 2026-11-20 | aucun (patch 23 seul, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK |

@@ -4366,14 +4366,30 @@ impl World {
             position,
             power,
         );
+        // Plugins see (and may trim) the blocks the explosion will destroy.
+        let mut blocks = explosion
+            .touches_blocks()
+            .then(|| explosion.get_blocks_to_destroy(self));
+        if let Some(blocks) = &blocks {
+            event = event.with_blocks(
+                blocks.keys().copied().collect(),
+                explosion
+                    .indirect_source()
+                    .map(|owner| owner.get_entity().entity_id),
+            );
+        }
         if let Some(server) = self.server.upgrade() {
             server.plugin_manager.fire_blocking(&server, &mut event);
         }
         if event.cancelled {
             return;
         }
+        if let Some(blocks) = &mut blocks {
+            let kept: rustc_hash::FxHashSet<BlockPos> = event.blocks.iter().copied().collect();
+            blocks.retain(|pos, _| kept.contains(pos));
+        }
 
-        let block_count = explosion.explode(self);
+        let block_count = explosion.explode(self, blocks);
         let particle = explosion.particle();
         let sound = IdOr::<SoundEvent>::Id(explosion.sound() as u16);
         for player in self.players.load().iter() {

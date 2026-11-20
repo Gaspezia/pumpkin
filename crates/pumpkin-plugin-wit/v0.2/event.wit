@@ -539,6 +539,11 @@ interface event {
         entity-id: s32,
         position: position,
         yield-rate: f32,
+        /// Blocks the explosion is about to destroy; remove entries to spare blocks
+        /// (entries added by the plugin are ignored).
+        blocks: list<block-pos>,
+        /// Entity credited with the explosion (who lit the TNT, who shot the fireball).
+        owner-id: option<s32>,
         cancelled: bool
     }
 
