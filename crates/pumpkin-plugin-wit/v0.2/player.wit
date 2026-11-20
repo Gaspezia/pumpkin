@@ -1328,6 +1328,11 @@ interface player {
         get-target-block-exact: func(max-distance: f64, include-fluids: bool) -> option<ray-trace-block-result>;
         /// Launches a projectile from the player's eyes in their line of sight.
         launch-projectile: func(%type: projectile-type) -> option<entity>;
+        /// Launches a fireball from the player's eyes along their line of sight, credited to the player.
+        /// `power` is the explosion power (vanilla fireball: 1), `incendiary` makes the crater catch fire,
+        /// `speed` the acceleration in blocks per tick (vanilla fireball: 0.1; zero or negative uses it).
+        /// Returns `none` if an entity spawn event handler cancels the spawn.
+        launch-fireball: async func(power: f32, incendiary: bool, speed: f64) -> option<entity>;
 
         // Advancements
 

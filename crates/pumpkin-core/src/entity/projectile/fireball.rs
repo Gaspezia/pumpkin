@@ -1,6 +1,6 @@
 use crate::entity::projectile::owner::ProjectileOwner;
 use std::sync::RwLock;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::item::Item;
@@ -24,6 +24,7 @@ pub struct FireballEntity {
     pub thrown: HurtingProjectile,
     pub item_stack: RwLock<ItemStack>,
     pub explosion_power: AtomicF32,
+    incendiary: AtomicBool,
 }
 
 impl FireballEntity {
@@ -50,6 +51,7 @@ impl FireballEntity {
             thrown: HurtingProjectile::new(thrown, HurtingProjectile::DEFAULT_ACCELERATION_POWER),
             item_stack: RwLock::new(Self::get_default_item()),
             explosion_power: AtomicF32::new(DEFAULT_EXPLOSION_POWER),
+            incendiary: AtomicBool::new(false),
         }
     }
 
@@ -90,6 +92,21 @@ impl FireballEntity {
 
     pub fn set_explosion_power(&self, power: f32) {
         self.explosion_power.store(power, Ordering::Relaxed);
+    }
+
+    /// Whether the explosion sets fire to its crater (Paper `Fireball.setIsIncendiary`).
+    pub fn is_incendiary(&self) -> bool {
+        self.incendiary.load(Ordering::Relaxed)
+    }
+
+    pub fn set_incendiary(&self, incendiary: bool) {
+        self.incendiary.store(incendiary, Ordering::Relaxed);
+    }
+
+    /// Sets the acceleration (blocks per tick) and points the fireball along `direction`.
+    pub fn set_speed(&self, speed: f64, direction: Vector3<f64>) {
+        self.thrown.set_acceleration_power(speed);
+        self.thrown.assign_directional_movement(direction);
     }
 }
 
@@ -185,11 +202,15 @@ impl EntityBase for FireballEntity {
         }
 
         // Explodes where the fireball is, which is the hit point after the move.
-        world.explode_from(
-            self,
-            self.get_entity().pos.load(),
+        let mut explosion = crate::world::explosion::Explosion::new(
             self.get_explosion_power(),
-            crate::world::ExplosionInteraction::Mob,
-        );
+            self.get_entity().pos.load(),
+            world.get_block_interaction(crate::world::ExplosionInteraction::Mob),
+        )
+        .with_source(self);
+        if self.is_incendiary() {
+            explosion = explosion.with_fire();
+        }
+        world.run_explosion(&explosion);
     }
 }

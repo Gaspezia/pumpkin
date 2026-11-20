@@ -138,6 +138,11 @@ impl ProjectileOwner {
         }
     }
 
+    /// Changes who shot the projectile.
+    pub fn set_owner(&self, owner: Option<&Entity>) {
+        self.owner.set_uuid(owner.map(|owner| owner.entity_uuid));
+    }
+
     /// Start of every projectile tick: announces the shot once, then checks the owner.
     pub fn tick(&self, projectile: &Entity) {
         if !self.has_been_shot.swap(true, Relaxed) {
