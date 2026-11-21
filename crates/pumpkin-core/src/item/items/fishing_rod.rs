@@ -1,3 +1,4 @@
+use crate::entity::projectile_legacy;
 use std::any::Any;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -69,12 +70,27 @@ impl ItemBehaviour for FishingRodItem {
                 f64::from(-y_cos),
             );
             let dist = dir.length();
-            let triangle = || 0.5 + 0.010_336_5 * (rand::random::<f64>() - rand::random::<f64>());
-            let velocity = dir.multiply(
-                0.6 / dist + triangle(),
-                0.6 / dist + triangle(),
-                0.6 / dist + triangle(),
-            );
+            let velocity = if world.combat_mode().is_legacy() {
+                // 1.8: from the eye, 0.16 to the side, speed 1.5, gaussian imprecision.
+                bobber
+                    .entity
+                    .pos
+                    .store(player.eye_position() + projectile_legacy::launch_offset(yaw));
+                projectile_legacy::launch_velocity(
+                    projectile_legacy::launch_direction(yaw, pitch, 0.0),
+                    f64::from(projectile_legacy::THROWN_SPEED),
+                    1.0,
+                    || projectile_legacy::gauss(rand::random::<f64>(), rand::random::<f64>()),
+                )
+            } else {
+                let triangle =
+                    || 0.5 + 0.010_336_5 * (rand::random::<f64>() - rand::random::<f64>());
+                dir.multiply(
+                    0.6 / dist + triangle(),
+                    0.6 / dist + triangle(),
+                    0.6 / dist + triangle(),
+                )
+            };
             bobber.entity.velocity.store(velocity);
 
             player
