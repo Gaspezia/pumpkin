@@ -221,11 +221,15 @@ impl Player {
             .living_entity
             .get_effect(&StatusEffect::JUMP_BOOST)
             .map(|effect| i32::from(effect.amplifier));
-        entity.velocity.store(combat_legacy::jump_motion(
+        let jump = combat_legacy::jump_motion(
             entity.velocity.load(),
             boost,
             entity.is_sprinting(),
             entity.yaw.load(),
+        );
+        entity.velocity.store(combat_legacy::ghost_jump_lead(
+            jump,
+            self.living_entity.get_attribute_value(&Attributes::GRAVITY),
         ));
     }
 

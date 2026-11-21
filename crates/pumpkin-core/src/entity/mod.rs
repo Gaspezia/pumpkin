@@ -115,6 +115,7 @@ pub(crate) mod combat;
 pub mod combat_legacy;
 mod combat_legacy_hit;
 pub mod predicate;
+pub mod projectile_legacy;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DelayedLeash {
@@ -2799,6 +2800,18 @@ impl Entity {
 
     pub fn check_zero_velo(&self) {
         let mut motion = self.velocity.load();
+
+        if self.world.load().combat_mode().is_legacy() {
+            // 1.8: every axis of every living entity, under 0.005.
+            let limit = combat_legacy::ZERO_MOTION_THRESHOLD;
+            for axis in [&mut motion.x, &mut motion.y, &mut motion.z] {
+                if axis.abs() < limit {
+                    *axis = 0.0;
+                }
+            }
+            self.velocity.store(motion);
+            return;
+        }
 
         if self.entity_type == &EntityType::PLAYER {
             if motion.horizontal_length_squared() < 9.0E-6 {
