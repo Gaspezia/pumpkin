@@ -292,6 +292,14 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : la fenetre d'invulnerabilite du moderne (compteur > 10, seul le surplus passe, brut memorise apres le casque) est deja la regle 1.8 : inchangee ; l'usure `max(1, floor(d/4))` est deja celle du moderne ; `block_reduced` et `invulnerability` sont prets pour le blocage a l'epee (L5, non fait : composants `consumable`/`attack_range` et utilisation de 72000 ticks restent a faire) ; les sources « sans armure » suivent la balise `bypasses_armor` moderne ; la Resistance garde le code moderne (meme formule).
 - Propre au fork (jamais propose upstream).
 
+### Patch 34 : gravite du fantome du joueur et attribut de degats a jour
+
+- Quoi : (E1) `impl EntityBase for Player` renvoie l'attribut `GRAVITY` pour `get_gravity` (le defaut du trait est 0) : le fantome serveur d'un joueur tombe (`(vy - 0,08) x 0,98` par tick) et le recul 1.8 part de la vraie vitesse verticale, `(0 ; 0,36075 ; 0,4)` au sol et `0,46075` en sprint au lieu de 0,4 et 0,5, et une victime en l'air n'est plus relancee a 0,4 a tout coup. Le moderne passe par le meme code et en profite (son recul vertical vaut `(vy/2 + 0,4)` puis plafond, comme en vanilla). (E2) `update_weapon_attributes` est rappelee au debut des deux chemins d'attaque (legacy et moderne) : l'attribut `ATTACK_DAMAGE` suit la pile tenue meme apres un `/give` ou un `set_slot` dans la case deja selectionnee, au lieu de garder le modificateur de l'objet precedent.
+- Pourquoi : mesures du banc contre Paper 1.8.8 (s1-s4, st1) ; les combos en l'air dependent de la vitesse verticale de la victime.
+- Fichiers : `crates/pumpkin-core/src/entity/player.rs`, `entity/living.rs` (visibilite), `entity/player/attack_legacy.rs`, test `e1_airborne_victim_uses_real_vertical_motion` dans `entity/combat_legacy.rs`.
+- Limites : residu mesure en l'air (la victime en plein saut a 6 et 9 ticks : 0,32-0,36 et 0,249 au lieu de 0,4 et 0,285, environ un tick d'avance du fantome) ; les tests sont purs (pas de joueur sans monde), la preuve complete est au banc (`comparaison-lot2.md`).
+- Propre au fork (jamais propose upstream).
+
 ## CI du fork
 
 - `rust.yml`, job `Run lints` : le runner hebergé tuait le job (exit 143, aucun pas en échec, vers 1 min 30) pendant clippy sur `pumpkin-core` (mémoire). Le job ajoute 8 Go de swap et limite `CARGO_BUILD_JOBS=2`. Diagnostic : SIGTERM sans message d'erreur, toujours au même endroit, reproductible sur run neuf.
