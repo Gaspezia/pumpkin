@@ -354,6 +354,27 @@ pub fn invulnerability(
     }
 }
 
+/// 1.8 explosion damage on an entity: `d10 = (1 - distance / radius) * exposure`, damage
+/// `(int)((d10² + d10) / 2 * 8 * radius + 1)` with `radius = 2 * power` (a `float` in 1.8).
+/// An entity in range takes at least 1, even with no exposure.
+#[must_use]
+pub fn explosion_damage(d10: f64, power: f32) -> f32 {
+    let radius = f64::from(power * 2.0);
+    ((d10 * d10 + d10) / 2.0 * 8.0 * radius + 1.0) as i32 as f32
+}
+
+/// 1.8 `EnchantmentProtection.func_92092_a`: the push a living entity receives, `d10` reduced by
+/// `floor(d10 * level * 0.15)` for its best Blast Protection piece. As `d10 <= 1`, this floors to 0
+/// up to level 6: the enchantment does not reduce the push in 1.8 (it reduces the damage only).
+#[must_use]
+pub fn explosion_push_reduced(d10: f64, blast_level: i32) -> f64 {
+    if blast_level > 0 {
+        d10 - (d10 * f64::from(blast_level as f32 * 0.15)).floor()
+    } else {
+        d10
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -657,5 +678,26 @@ mod tests {
         assert_eq!(armor_wear(8.0), 2);
         assert_eq!(armor_wear(1.0), 1);
         assert_eq!(armor_wear(15.9), 3);
+    }
+
+    #[test]
+    fn explosion_damage_follows_the_1_8_formula() {
+        // TNT (power 4, radius 8): point blank d10 = 1 -> (1 + 1) / 2 * 64 + 1 = 65.
+        assert_eq!(explosion_damage(1.0, 4.0), 65.0);
+        // d10 = 0.5 -> (0.25 + 0.5) / 2 * 64 + 1 = 25.
+        assert_eq!(explosion_damage(0.5, 4.0), 25.0);
+        // Fireball (power 2, radius 4), d10 = 0.25 -> (0.0625 + 0.25) / 2 * 32 + 1 = 6.
+        assert_eq!(explosion_damage(0.25, 2.0), 6.0);
+        // No exposure: still 1 in range.
+        assert_eq!(explosion_damage(0.0, 4.0), 1.0);
+    }
+
+    #[test]
+    fn blast_protection_does_not_reduce_the_push_in_1_8() {
+        for level in 0..=6 {
+            assert_eq!(explosion_push_reduced(0.8, level), 0.8);
+        }
+        // Only an absurd level (7 * 0.15 = 1.05) cancels a strong push.
+        assert_eq!(explosion_push_reduced(0.96, 7), 0.96 - 1.0);
     }
 }

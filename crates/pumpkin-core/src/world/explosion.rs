@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering::Relaxed};
 
 use pumpkin_data::{
     Block, BlockDirection, BlockState, BlockStateId,
@@ -565,7 +565,9 @@ impl<'a> Explosion<'a> {
                 Self::calculate_exposure(&self.pos, entity, world) as f64
             };
 
-            if exposure == 0.0 {
+            let legacy = world.combat_mode().is_legacy();
+            // 1.8 still hurts (1 at least) an entity in range with no exposure.
+            if exposure == 0.0 && !(legacy && should_damage) {
                 continue;
             }
 
@@ -574,8 +576,14 @@ impl<'a> Explosion<'a> {
                     .source
                     .is_none_or(|source| source.do_teams_allow_damage(entity_base.as_ref()))
             {
-                let damage =
-                    calc.get_entity_damage_amount(self, entity_base.as_ref(), exposure as f32);
+                let damage = if legacy {
+                    crate::entity::combat_legacy::explosion_damage(
+                        (1.0 - distance) * exposure,
+                        self.power,
+                    )
+                } else {
+                    calc.get_entity_damage_amount(self, entity_base.as_ref(), exposure as f32)
+                };
                 let damaged = entity_base.damage_with_context(
                     entity_base.as_ref(),
                     damage,
@@ -590,6 +598,13 @@ impl<'a> Explosion<'a> {
             };
 
             // Paper parity: a damage event cancelled by a plugin also cancels the knockback.
+            // 1.8 (SPIGOT-949): the hurt cooldown does not, and primed TNT is always pushed.
+            let damage_refused = damage_refused
+                && !(legacy
+                    && (entity.entity_type == &EntityType::TNT
+                        || entity_base
+                            .get_living_entity()
+                            .is_some_and(|living| living.hurt_cooldown.load(Relaxed) > 10)));
             if !knockback_allowed(damage_refused) {
                 continue;
             }
@@ -601,6 +616,15 @@ impl<'a> Explosion<'a> {
                 entity.get_eye_pos()
             };
             let direction = (dir_pos - self.pos).normalize();
+            if legacy {
+                self.push_entity_legacy(
+                    entity_base.as_ref(),
+                    direction,
+                    (1.0 - distance) * exposure,
+                );
+                self.on_explosion_hit(entity_base.as_ref());
+                continue;
+            }
 
             let knockback_resistance = entity_base.get_living_entity().map_or(0.0, |living| {
                 living.get_attribute_value(&Attributes::EXPLOSION_KNOCKBACK_RESISTANCE)
@@ -625,6 +649,39 @@ impl<'a> Explosion<'a> {
             }
 
             self.on_explosion_hit(entity_base.as_ref());
+        }
+    }
+
+    /// 1.8 push: `direction * d10` (reduced by Blast Protection for the server-side motion of a
+    /// living entity, not for the packet a player gets), no knockback resistance, none for a
+    /// creative player.
+    fn push_entity_legacy(&self, entity_base: &dyn EntityBase, direction: Vector3<f64>, d10: f64) {
+        if !direction.x.is_finite() || !d10.is_finite() {
+            return;
+        }
+        let entity = entity_base.get_entity();
+        let player = entity_base.get_player();
+        if player.is_some_and(|player| player.is_creative()) {
+            return;
+        }
+        let d11 = if player.is_some() {
+            d10
+        } else {
+            entity_base.get_living_entity().map_or(d10, |living| {
+                crate::entity::combat_legacy::explosion_push_reduced(
+                    d10,
+                    living.max_blast_protection_level(),
+                )
+            })
+        };
+        let push = direction * d11;
+        let push = if entity_base.get_living_entity().is_some() {
+            entity.fire_knockback_events(d11, push, None)
+        } else {
+            Some(push)
+        };
+        if let Some(push) = push {
+            entity.add_velocity(push);
         }
     }
 
