@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use pumpkin_data::tag::Taggable;
 use pumpkin_util::version::JavaMinecraftVersion;
 
 impl JavaClient {
@@ -94,7 +95,16 @@ impl JavaClient {
             return;
         }
 
-        if held.get_data_component::<ConsumableImpl>().is_some()
+        // `legacy_1_8`: a sword blocks while the button is held (1.8 `setItemInUse(72000)`). The
+        // server stack has no `consumable`, so it is never eaten; the client gets one on the wire.
+        if player.world().combat_mode().is_legacy()
+            && held.item.has_tag(&pumpkin_data::tag::Item::MINECRAFT_SWORDS)
+            && held.get_data_component::<ConsumableImpl>().is_none()
+        {
+            player
+                .living_entity
+                .set_active_hand(hand, held.clone(), 72_000);
+        } else if held.get_data_component::<ConsumableImpl>().is_some()
             || held.get_data_component::<BlocksAttacksImpl>().is_some()
             || held
                 .get_data_component::<pumpkin_data::data_component_impl::KineticWeaponImpl>()

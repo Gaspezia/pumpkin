@@ -1111,6 +1111,17 @@ impl LivingEntity {
             .insert(target_id, now);
     }
 
+    /// 1.8 `isBlocking`: using a sword. Only the `legacy_1_8` hit chain reads it, and only a
+    /// sword can be in use there (`use_item` starts the use in that mode alone).
+    #[must_use]
+    pub fn is_blocking_with_sword(&self) -> bool {
+        self.item_in_use
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .is_some_and(|item| item.item.has_tag(&tag::Item::MINECRAFT_SWORDS))
+    }
+
     pub fn is_blocking(&self) -> bool {
         let item_in_use = self
             .item_in_use
@@ -4258,7 +4269,7 @@ impl LivingEntity {
         // Vanilla `hurtServer` damage cooldown, on the damage before armor: within it only
         // the part above the last hit lands
         let last_damage = self.last_damage_taken.load();
-        let (incoming, took_full_damage) = if self.hurt_cooldown.load(Relaxed) > 10
+        let (mut incoming, took_full_damage) = if self.hurt_cooldown.load(Relaxed) > 10
             && !damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_COOLDOWN)
         {
             if amount <= last_damage {
@@ -4270,6 +4281,15 @@ impl LivingEntity {
             (amount, true)
         };
         self.last_damage_taken.store(amount);
+
+        // 1.8 sword block: `(1 + d) / 2` on the damage that lands, before the armor, from every
+        // direction, except for the sources that ignore armor. The raw amount stays in the window.
+        if world.combat_mode().is_legacy()
+            && self.is_blocking_with_sword()
+            && !damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_ARMOR)
+        {
+            incoming = crate::entity::combat_legacy::block_reduced(incoming);
+        }
 
         // Vanilla `actuallyHurt`: armor, then enchantments and effects
         let damage_after_armor =

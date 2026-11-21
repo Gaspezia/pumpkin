@@ -3,15 +3,77 @@ use crate::codec::data_component::{DataComponentCodec, deserialize, serialize};
 use crate::ser::{NetworkReadExt, NetworkWriteExt, ReadingError, WritingError};
 use pumpkin_data::data_component::DataComponent;
 use pumpkin_data::data_component_impl::{
-    CustomDataImpl, CustomNameImpl, DataComponentImpl, ItemNameImpl,
+    AttackRangeImpl, ConsumableImpl, ConsumeAnimation, CustomDataImpl, CustomNameImpl,
+    DataComponentImpl, IdOr, ItemNameImpl,
 };
+use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::version::JavaMinecraftVersion;
+use pumpkin_data::sound::Sound;
 use std::borrow::Cow;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::io::Cursor;
+
+/// `[pvp] combat = "legacy_1_8"`: swords go out with the components that give a 26.x client the
+/// 1.8 blocking pose and reach. Set once at server start.
+static LEGACY_SWORD_COMPONENTS: AtomicBool = AtomicBool::new(false);
+
+pub fn set_legacy_sword_components(enabled: bool) {
+    LEGACY_SWORD_COMPONENTS.store(enabled, Ordering::Relaxed);
+}
+
+/// The stack as the client must see it. A sword without its own `consumable` / `attack_range`
+/// gets: `consumable { animation block, 30 days (never eaten), no sound, no particles }` and
+/// `attack_range { reach 3.0 (6.0 creative), hitbox margin 0.1 }`, the 1.8 values.
+fn wire_stack(stack: &ItemStack) -> Cow<'_, ItemStack> {
+    wire_stack_with(stack, LEGACY_SWORD_COMPONENTS.load(Ordering::Relaxed))
+}
+
+fn wire_stack_with(stack: &ItemStack, legacy: bool) -> Cow<'_, ItemStack> {
+    if !legacy
+        || stack.is_empty()
+        || !stack.item.has_tag(&tag::Item::MINECRAFT_SWORDS)
+    {
+        return Cow::Borrowed(stack);
+    }
+    let mut stack = stack.clone();
+    if stack.get_data_component::<ConsumableImpl>().is_none() {
+        stack.patch.push((
+            DataComponent::Consumable,
+            Some(
+                ConsumableImpl::new(
+                    // 30 days, under the `i32` limit in ticks
+                    2_592_000.0,
+                    ConsumeAnimation::Block,
+                    IdOr::Id(Sound::IntentionallyEmpty),
+                    false,
+                    Cow::Borrowed(&[]),
+                )
+                .to_dyn(),
+            ),
+        ));
+    }
+    if stack.get_data_component::<AttackRangeImpl>().is_none() {
+        stack.patch.push((
+            DataComponent::AttackRange,
+            Some(
+                AttackRangeImpl {
+                    min_reach: 0.0,
+                    max_reach: 3.0,
+                    min_creative_reach: 0.0,
+                    max_creative_reach: 6.0,
+                    hitbox_margin: 0.1,
+                    mob_factor: 1.0,
+                }
+                .to_dyn(),
+            ),
+        ));
+    }
+    Cow::Owned(stack)
+}
 
 #[derive(Clone)]
 pub struct ItemStackSerializer<'a>(pub Cow<'a, ItemStack>);
@@ -37,6 +99,7 @@ fn serialize_item_stack_with_id(
     version: JavaMinecraftVersion,
     write: &mut impl NetworkWriteExt,
 ) -> Result<(), WritingError> {
+    let stack = &*wire_stack(stack);
     if version >= JavaMinecraftVersion::V_1_20_5 {
         if stack.is_empty() {
             write.put_var_int(&VarInt(0))
@@ -102,6 +165,7 @@ fn serialize_length_prefixed_item_stack_with_id(
     version: JavaMinecraftVersion,
     write: &mut impl NetworkWriteExt,
 ) -> Result<(), WritingError> {
+    let stack = &*wire_stack(stack);
     if version >= JavaMinecraftVersion::V_1_20_5 {
         if stack.is_empty() {
             write.put_var_int(&VarInt(0))
@@ -752,6 +816,8 @@ impl OptionalItemStackHash {
 
     #[must_use]
     pub fn hash_equals(&self, other: &ItemStack) -> bool {
+        // The client hashes the stack it was sent, legacy sword components included.
+        let other = &*wire_stack(other);
         if let Some(hash) = &self.0 {
             if hash.item_id != other.item.id.into() || hash.count != other.item_count.into() {
                 return false;
@@ -852,5 +918,28 @@ impl From<Option<ItemStack>> for ItemStackOptionalTemplateSerializer<'_> {
             || ItemStackOptionalTemplateSerializer(Cow::Borrowed(ItemStack::EMPTY)),
             ItemStackOptionalTemplateSerializer::from,
         )
+    }
+}
+
+#[cfg(test)]
+mod legacy_sword_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_sword_gets_block_animation_and_reach() {
+        let sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
+        let wire = wire_stack_with(&sword, true);
+        let consumable = wire.get_data_component::<ConsumableImpl>().unwrap();
+        assert!(matches!(consumable.animation, ConsumeAnimation::Block));
+        // 30 days: positive and under the `i32` limit in ticks
+        assert!(consumable.consume_ticks() > 0);
+        assert!(!consumable.consume_particles);
+        let range = wire.get_data_component::<AttackRangeImpl>().unwrap();
+        assert!((range.hitbox_margin - 0.1).abs() < 1.0e-6);
+        // untouched when disabled, for other items, and without duplicating a stack's own component
+        assert!(matches!(wire_stack_with(&sword, false), Cow::Borrowed(_)));
+        let stone = ItemStack::new(1, &Item::STONE);
+        assert!(matches!(wire_stack_with(&stone, true), Cow::Borrowed(_)));
+        assert_eq!(wire.patch.len(), wire_stack_with(&wire, true).patch.len());
     }
 }
