@@ -216,6 +216,30 @@ pub fn jump_motion(
     result
 }
 
+/// The jump of the server-side motion, set one tick early.
+///
+/// 1.8 handles the packet that starts the jump after the entity update of that tick, so the first
+/// fall step comes on the next tick; here the packet is handled before the update, so the motion
+/// is raised by exactly one step (`v = v' / drag + gravity`, `v' / 0.91` sideways) for the first
+/// step to land on `0.42`. Measured on the bench (Paper 1.8.8 against Pumpkin, victim hit 7 to 10
+/// ticks after its jump): without this the ghost was one tick ahead.
+#[must_use]
+pub fn ghost_jump_lead(motion: Vector3<f64>, gravity: f64) -> Vector3<f64> {
+    Vector3::new(
+        motion.x / AIR_FRICTION,
+        motion.y / VERTICAL_DRAG + gravity,
+        motion.z / AIR_FRICTION,
+    )
+}
+
+/// Threshold under which 1.8 zeroes each axis of a living entity's motion every tick
+/// (`Math.abs(motion) < 0.005`; the modern game uses 0.003).
+pub const ZERO_MOTION_THRESHOLD: f64 = 0.005;
+
+/// Horizontal drag of a ghost in the air (`0.91`) and vertical drag (`0.98`) per tick.
+const AIR_FRICTION: f64 = 0.91;
+const VERTICAL_DRAG: f64 = 0.98;
+
 /// Velocity as a 1.8 client reads it: each component clamped to +-3.9, then `(int)(v * 8000)`
 /// divided by 8000.
 #[must_use]
@@ -353,6 +377,22 @@ mod tests {
 
     /// E1: the ghost falls, so a victim in the air is lifted from its real vertical motion
     /// (Paper 1.8.8: `-0.2308` gives `0.28463`), and a rising one is capped at `0.4`.
+    #[test]
+    fn e3_jump_lead_lands_on_the_jump_after_one_step() {
+        let jump = jump_motion(Vector3::new(0.0, 0.0, 0.0), None, true, 0.0);
+        let lead = ghost_jump_lead(jump, 0.08);
+        // one tick of the ghost (gravity then drag, 0.91 sideways) gives back the 1.8 motion
+        near_f(((lead.y - 0.08) * 0.98) - jump.y, 1.0e-12);
+        near_f(lead.z * 0.91 - jump.z, 1.0e-12);
+        // 1.8 zeroes the apex ghost (0.0038 < 0.005), the modern game keeps it (0.003)
+        let apex = (0.0835f64 - 0.08) * 0.98;
+        assert!(apex.abs() < ZERO_MOTION_THRESHOLD && apex.abs() > 0.003);
+    }
+
+    fn near_f(a: f64, tolerance: f64) {
+        assert!(a.abs() < tolerance, "{a}");
+    }
+
     #[test]
     fn e1_airborne_victim_uses_real_vertical_motion() {
         assert!((hit(Vector3::new(0.0, -0.2308, 0.0)).y - 0.2846).abs() < 1.0e-4);
