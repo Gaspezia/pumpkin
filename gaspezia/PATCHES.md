@@ -292,6 +292,14 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : la fenetre d'invulnerabilite du moderne (compteur > 10, seul le surplus passe, brut memorise apres le casque) est deja la regle 1.8 : inchangee ; l'usure `max(1, floor(d/4))` est deja celle du moderne ; `block_reduced` et `invulnerability` sont prets pour le blocage a l'epee (L5, non fait : composants `consumable`/`attack_range` et utilisation de 72000 ticks restent a faire) ; les sources « sans armure » suivent la balise `bypasses_armor` moderne ; la Resistance garde le code moderne (meme formule).
 - Propre au fork (jamais propose upstream).
 
+### Patch 35 : blocage a l'epee et portee 1.8
+
+- Quoi : en mode `legacy_1_8`, un clic droit avec une epee lance une utilisation de 72 000 ticks (`use_item`, sans `consumable` cote serveur : l'epee n'est jamais mangee) ; tant qu'elle dure, `LivingEntity::is_blocking_with_sword` est vrai et la chaine de degats applique `(1 + d) / 2` sur les degats qui passent (apres l'invulnerabilite, avant l'armure), de toutes les directions, sauf pour les sources `bypasses_armor` (1.8 « sans armure »). Le recul n'est pas reduit, l'epee ne s'use pas. Vers un client Java, `ItemStackSerializer` ajoute aux epees qui n'ont pas deja ces composants `consumable { animation block, 2 592 000 s, sans son ni particules }` (pose de blocage, ralentissement) et `attack_range { portee 3,0 (6,0 en creatif), marge de boite 0,1 }` (la marge 1.8 ; le client 26.x n'en a pas sans ce composant). `OptionalItemStackHash::hash_equals` compare avec la meme pile, sinon l'inventaire se resynchroniserait a chaque clic. Le drapeau est pose une fois dans `Server::new` (`pumpkin_protocol::codec::item_stack_seralizer::set_legacy_sword_components`).
+- Pourquoi : le block-hit et le blocage des kits d'Arena (`(1+d)/2` dans toutes les directions) ; le client 26.x n'a pas d'action « bloquer » pour une epee, `consumable` a animation `block` est le contournement d'OCM.
+- Fichiers : `crates/pumpkin-protocol/src/codec/item_stack_seralizer.rs` (`wire_stack`, test), `crates/pumpkin-core/src/net/java/play/use_item.rs`, `entity/living.rs`, `server/mod.rs`.
+- Limites : non verifie avec un vrai client 26.x (le banc Mineflayer ne voit ni la pose ni le ralentissement) ; le sprint du client au block-hit n'est pas force par le serveur (le banc Paper le laisse vrai) ; pas de garde de 50 ms apres un coup de bras ; une epee que le client renvoie en creatif peut garder les composants ajoutes ; les gabarits d'echange et de recette n'en portent pas.
+- Propre au fork (jamais propose upstream).
+
 ## CI du fork
 
 - `rust.yml`, job `Run lints` : le runner hebergé tuait le job (exit 143, aucun pas en échec, vers 1 min 30) pendant clippy sur `pumpkin-core` (mémoire). Le job ajoute 8 Go de swap et limite `CARGO_BUILD_JOBS=2`. Diagnostic : SIGTERM sans message d'erreur, toujours au même endroit, reproductible sur run neuf.
