@@ -25,8 +25,10 @@ spec:
     - name: jnlp
       image: nexus.gaspezia.lan/docker-private/jenkins-inbound-agent:gaspezia
       resources:
-        requests: { cpu: "200m", memory: "256Mi" }
-        limits:   { cpu: "2", memory: "512Mi" }
+        # git fetch of the full fork peaks at ~460 MB RSS next to the agent JVM: 512Mi OOM-killed the
+        # jnlp container during checkout (ClosedChannelException, builds #32-#37, 2026-11-21).
+        requests: { cpu: "200m", memory: "512Mi" }
+        limits:   { cpu: "2", memory: "1536Mi" }
     - name: rust
       image: nexus.gaspezia.lan/docker-all/rust:1.98-trixie
       command: ["sleep", "infinity"]
