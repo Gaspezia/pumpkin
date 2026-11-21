@@ -260,6 +260,10 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-core/src/entity/combat_legacy.rs` (formules : `base_knockback`, `extra_knockback`, `jump_motion`...), `entity/combat_legacy_hit.rs` (nouveau), `entity/player/attack_legacy.rs`, aiguillages dans `LivingEntity::deal_default_knockback` et `Player::jump`. Les evenements de plugin `entity-knockback*` et `player-velocity` sont tires comme sur le chemin moderne (le recul supplementaire est un evenement a part, comme avant).
 - Limites : `sin` et `cos` exacts au lieu de la table de 1.8 (ecart < 1e-4, sous le critere de 2,5e-4 du banc) ; le fantome n'est pas verifie tick par tick (le banc mesurera) ; le recul d'explosion, de canne et des fleches (Frappe) reste a faire (lots L6, L7, L9) ; le client 26.x decide seul de son ralentissement et de la relance de son sprint.
 
+## CI du fork
+
+- `rust.yml`, job `Run lints` : le runner hebergé tuait le job (exit 143, aucun pas en échec, vers 1 min 30) pendant clippy sur `pumpkin-core` (mémoire). Le job ajoute 8 Go de swap et limite `CARGO_BUILD_JOBS=2`. Diagnostic : SIGTERM sans message d'erreur, toujours au même endroit, reproductible sur run neuf.
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |

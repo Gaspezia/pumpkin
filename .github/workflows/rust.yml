@@ -98,7 +98,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: debug-${{ runner.os }}-${{ runner.arch }}
+      # The hosted runner kills this job (exit 143) when clippy on pumpkin-core
+      # runs out of memory: add swap and limit parallelism.
+      - name: Add swap
+        run: |
+          sudo fallocate -l 8G /swapfile2 || sudo dd if=/dev/zero of=/swapfile2 bs=1M count=8192
+          sudo chmod 600 /swapfile2
+          sudo mkswap /swapfile2
+          sudo swapon /swapfile2
+          free -m
       - name: Clippy affected packages
+        env:
+          CARGO_BUILD_JOBS: "2"
         run: >-
           python .github/scripts/ci_packages.py run --
           cargo clippy --all-targets --all-features
