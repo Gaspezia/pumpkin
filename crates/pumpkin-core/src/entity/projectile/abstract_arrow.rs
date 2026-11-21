@@ -187,7 +187,9 @@ pub fn can_hit_entity<A: AbstractArrow + ?Sized>(arrow: &A, other: &dyn EntityBa
         return false;
     }
     other.can_be_hit_by_projectile()
-        && arrow.owner().can_hit(&world, other.get_entity())
+        && arrow
+            .owner()
+            .can_hit_projectile(&world, arrow.get_entity(), other.get_entity())
         && !arrow.flight().has_pierced(other.get_entity())
 }
 
@@ -242,7 +244,9 @@ pub fn tick<A: AbstractArrow + ?Sized>(arrow: &A, caller: &dyn EntityBase, serve
     }
     flight.in_ground_time.store(0, Ordering::Relaxed);
     let in_water = entity.touching_water.load(Ordering::Relaxed);
-    if in_water {
+    // 1.8 applies the water drag after the move, in place of the air drag.
+    let legacy = super::is_legacy(entity);
+    if in_water && !legacy {
         entity
             .velocity
             .store(entity.velocity.load() * arrow.water_inertia());
@@ -266,7 +270,11 @@ pub fn tick<A: AbstractArrow + ?Sized>(arrow: &A, caller: &dyn EntityBase, serve
         entity.tick_block_collisions(caller);
     }
 
-    if !in_water {
+    if legacy && in_water {
+        entity
+            .velocity
+            .store(entity.velocity.load() * arrow.water_inertia());
+    } else if !in_water {
         entity.velocity.store(entity.velocity.load() * AIR_INERTIA);
     }
     if physics && !flight.is_in_ground() {
@@ -398,6 +406,10 @@ pub fn get_many_entity_hit_result(
         let bounding_box = candidate.get_entity().bounding_box.load();
         if let Some(hit) = bounding_box.clip(from, to) {
             hits.push((candidate, hit));
+        } else if super::is_legacy(projectile)
+            && let Some(outside) = bounding_box.expand_all(margin).clip(from, to)
+        {
+            hits.push((candidate, outside));
         } else if margin > 0.0
             && let Some(outside) = bounding_box.expand_all(margin).clip(from, to)
         {

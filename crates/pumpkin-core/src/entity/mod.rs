@@ -115,6 +115,7 @@ pub(crate) mod combat;
 pub mod combat_legacy;
 mod combat_legacy_hit;
 pub mod predicate;
+pub mod projectile_legacy;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DelayedLeash {
