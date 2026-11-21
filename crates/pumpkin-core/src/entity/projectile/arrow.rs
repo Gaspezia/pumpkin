@@ -104,7 +104,12 @@ impl ArrowEntity {
         pickup: ArrowPickup,
     ) -> Self {
         let mut owner_pos = shooter.pos.load();
-        owner_pos.y = owner_pos.y + f64::from(shooter.entity_dimension.load().eye_height) - 0.1;
+        owner_pos.y += f64::from(shooter.entity_dimension.load().eye_height);
+        if super::is_legacy(shooter) {
+            owner_pos += crate::entity::projectile_legacy::launch_offset(shooter.yaw.load());
+        } else {
+            owner_pos.y -= 0.1;
+        }
         entity.set_pos(owner_pos);
         let mut launch_event =
             crate::plugin::api::events::entity::projectile_launch::ProjectileLaunchEvent::new(
@@ -269,14 +274,28 @@ impl ArrowEntity {
             deviation.mul_add(rand::random::<f64>() - rand::random::<f64>(), mode)
         }
 
-        let velocity = Vector3::new(x, y, z)
-            .normalize()
-            .add_raw(
-                next_triangular(0.0, 0.017_227_5 * uncertainty),
-                next_triangular(0.0, 0.017_227_5 * uncertainty),
-                next_triangular(0.0, 0.017_227_5 * uncertainty),
+        let velocity = if super::is_legacy(&self.entity) {
+            crate::entity::projectile_legacy::launch_velocity(
+                Vector3::new(x, y, z),
+                power,
+                uncertainty,
+                || {
+                    crate::entity::projectile_legacy::gauss(
+                        rand::random::<f64>(),
+                        rand::random::<f64>(),
+                    )
+                },
             )
-            .multiply(power, power, power);
+        } else {
+            Vector3::new(x, y, z)
+                .normalize()
+                .add_raw(
+                    next_triangular(0.0, 0.017_227_5 * uncertainty),
+                    next_triangular(0.0, 0.017_227_5 * uncertainty),
+                    next_triangular(0.0, 0.017_227_5 * uncertainty),
+                )
+                .multiply(power, power, power)
+        };
 
         self.entity.velocity.store(velocity);
         let len = velocity.horizontal_length();
@@ -734,11 +753,24 @@ impl ArrowEntity {
         if punch == 0 {
             return;
         }
+        let velocity = self.entity.velocity.load();
+        if super::is_legacy(&self.entity) {
+            // 1.8: along the flight whatever the resistance, on top of the base knockback.
+            if let Some(push) =
+                crate::entity::projectile_legacy::punch_push(velocity, i32::from(punch))
+            {
+                living
+                    .entity
+                    .velocity
+                    .store(living.entity.velocity.load() + push);
+                living.entity.velocity_dirty.store(true, Ordering::Relaxed);
+            }
+            return;
+        }
         let resistance = (1.0
             - living
                 .get_attribute_value(&pumpkin_data::attributes::Attributes::KNOCKBACK_RESISTANCE))
         .max(0.0);
-        let velocity = self.entity.velocity.load();
         let push = Vector3::new(velocity.x, 0.0, velocity.z).normalize()
             * (f64::from(punch) * 0.6 * resistance);
         if push.length_squared() > 0.0 {

@@ -1,6 +1,7 @@
 use super::{Entity, EntityBase, living::LivingEntity};
 use crate::block::blocks::bubble_column;
 use crate::entity::projectile_deflection::{ProjectileDeflection, deflect};
+use crate::entity::projectile_legacy;
 use crate::server::Server;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
@@ -73,7 +74,12 @@ impl ThrownItemEntity {
     /// Starts at the shooter's eye.
     pub fn new(entity: Entity, owner: &Entity, gravity: f64) -> Self {
         let mut owner_pos = owner.pos.load();
-        owner_pos.y += owner.get_eye_height() - 0.1;
+        owner_pos.y += owner.get_eye_height();
+        if is_legacy(owner) {
+            owner_pos += projectile_legacy::launch_offset(owner.yaw.load());
+        } else {
+            owner_pos.y -= 0.1;
+        }
         entity.set_pos(owner_pos);
         Self::owned(entity, owner, gravity)
     }
@@ -122,14 +128,20 @@ impl ThrownItemEntity {
         fn next_triangular(mode: f64, deviation: f64) -> f64 {
             deviation.mul_add(rand::random::<f64>() - rand::random::<f64>(), mode)
         }
-        let velocity = Vector3::new(x, y, z)
-            .normalize()
-            .add_raw(
-                next_triangular(0.0, 0.017_227_5 * uncertainty),
-                next_triangular(0.0, 0.017_227_5 * uncertainty),
-                next_triangular(0.0, 0.017_227_5 * uncertainty),
-            )
-            .multiply(power, power, power);
+        let velocity = if is_legacy(&self.entity) {
+            projectile_legacy::launch_velocity(Vector3::new(x, y, z), power, uncertainty, || {
+                projectile_legacy::gauss(rand::random::<f64>(), rand::random::<f64>())
+            })
+        } else {
+            Vector3::new(x, y, z)
+                .normalize()
+                .add_raw(
+                    next_triangular(0.0, 0.017_227_5 * uncertainty),
+                    next_triangular(0.0, 0.017_227_5 * uncertainty),
+                    next_triangular(0.0, 0.017_227_5 * uncertainty),
+                )
+                .multiply(power, power, power)
+        };
 
         self.entity.velocity.store(velocity);
         let len = velocity.horizontal_length();
@@ -157,15 +169,19 @@ impl ThrownItemEntity {
             handle_first_tick_bubble_column(caller, &world);
         }
 
-        let mut velocity = entity.velocity.load();
-        velocity.y -= self.get_gravity();
+        // 1.8 moves with the speed it has, then applies drag and gravity after the move.
+        let legacy = is_legacy(entity);
         let inertia = if entity.touching_water.load(Ordering::Relaxed) {
             WATER_INERTIA
         } else {
             AIR_INERTIA
         };
-        velocity = velocity * inertia;
-        entity.velocity.store(velocity);
+        let mut velocity = entity.velocity.load();
+        if !legacy {
+            velocity.y -= self.get_gravity();
+            velocity = velocity * inertia;
+            entity.velocity.store(velocity);
+        }
 
         let hit = get_hit_result_on_move_vector(
             caller,
@@ -178,6 +194,15 @@ impl ThrownItemEntity {
         entity.set_pos(new_pos);
         update_rotation(entity, false);
         entity.tick_block_collisions(caller);
+        if legacy {
+            velocity = Vector3::new(
+                velocity.x * inertia,
+                velocity.y * inertia,
+                velocity.z * inertia,
+            );
+            velocity.y -= self.get_gravity();
+            entity.velocity.store(velocity);
+        }
 
         let packet = CEntityVelocity::new(entity.entity_id.into(), velocity);
         world.broadcast_to_chunk(entity.chunk_pos.load(), &packet);
@@ -191,7 +216,10 @@ impl ThrownItemEntity {
     }
 
     fn can_hit_entity(&self, world: &World, other: &dyn EntityBase) -> bool {
-        other.can_be_hit_by_projectile() && self.owner.can_hit(world, other.get_entity())
+        other.can_be_hit_by_projectile()
+            && self
+                .owner
+                .can_hit_projectile(world, &self.entity, other.get_entity())
     }
 
     const fn get_entity(&self) -> &Entity {
@@ -557,8 +585,16 @@ pub fn may_break(projectile: &dyn EntityBase, world: &World) -> bool {
     !adventure
 }
 
-/// Entity boxes grow by up to 0.3 as the projectile ages.
+/// Whether the world the entity lives in plays the 1.8 combat rules.
+pub(crate) fn is_legacy(entity: &Entity) -> bool {
+    entity.world.load().combat_mode().is_legacy()
+}
+
+/// Entity boxes grow by up to 0.3 as the projectile ages (1.8: 0.3 from the start).
 fn compute_margin(entity: &Entity) -> f64 {
+    if is_legacy(entity) {
+        return projectile_legacy::HIT_MARGIN;
+    }
     let ticks = entity.tick_count.load(Ordering::Relaxed);
     f64::from(((ticks - 2) as f32 / 20.0).clamp(0.0, 0.3))
 }

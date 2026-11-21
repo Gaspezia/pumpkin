@@ -220,6 +220,18 @@ impl ProjectileOwner {
                 .is_none_or(|owner| !owner.get_entity().is_passenger_of_same_vehicle(entity))
     }
 
+    /// [`Self::can_hit`] for a projectile in flight: under the 1.8 rules the shooter is
+    /// untouchable for the first 5 ticks and fair game afterwards, wherever the projectile is.
+    #[must_use]
+    pub fn can_hit_projectile(&self, world: &World, projectile: &Entity, entity: &Entity) -> bool {
+        if world.combat_mode().is_legacy() {
+            return !self.owner.matches(entity)
+                || projectile.tick_count.load(Relaxed)
+                    >= crate::entity::projectile_legacy::OWNER_GRACE_TICKS;
+        }
+        self.can_hit(world, entity)
+    }
+
     pub fn write_nbt(&self, nbt: &mut NbtCompound) {
         self.owner.write_nbt(nbt, "Owner");
         if self.left_owner.load(Relaxed) {
