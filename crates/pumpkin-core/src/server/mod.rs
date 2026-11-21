@@ -191,6 +191,10 @@ impl Server {
             advanced_config.commands.broadcast_console_to_ops,
         );
 
+        pumpkin_protocol::codec::item_stack_seralizer::set_legacy_sword_components(
+            advanced_config.pvp.combat.is_legacy(),
+        );
+
         let world_path = basic_config.get_world_path();
 
         let block_registry = super::block::registry::default_registry();
