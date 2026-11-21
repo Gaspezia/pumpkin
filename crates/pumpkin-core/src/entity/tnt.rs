@@ -154,9 +154,15 @@ impl EntityBase for TNTEntity {
             entity.remove();
             let world = entity.world.load_full();
             if world.level_info.load().game_rules.tnt_explodes {
-                // Vanilla `PrimedTnt.explode`: `getY(0.0625)`.
+                // Vanilla `PrimedTnt.explode`: `getY(0.0625)`; `legacy_1_8` follows Spigot 1.8.8, which
+                // centers the explosion on the TNT (`y + length / 2`).
                 let pos = entity.pos.load();
-                let y = f64::from(entity.entity_type.dimension[1]).mul_add(0.0625, pos.y);
+                let factor = if world.combat_mode().is_legacy() {
+                    0.5
+                } else {
+                    0.0625
+                };
+                let y = f64::from(entity.entity_type.dimension[1]).mul_add(factor, pos.y);
                 world.explode_from(
                     caller,
                     Vector3::new(pos.x, y, pos.z),

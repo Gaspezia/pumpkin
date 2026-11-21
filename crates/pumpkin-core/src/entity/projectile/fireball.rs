@@ -201,10 +201,16 @@ impl EntityBase for FireballEntity {
             );
         }
 
-        // Explodes where the fireball is, which is the hit point after the move.
+        // Explodes where the fireball is, which is the hit point after the move. 1.8 explodes at
+        // the position the fireball had before the step that hit (`legacy_1_8`).
+        let center = if world.combat_mode().is_legacy() {
+            self.get_entity().last_pos.load()
+        } else {
+            self.get_entity().pos.load()
+        };
         let mut explosion = crate::world::explosion::Explosion::new(
             self.get_explosion_power(),
-            self.get_entity().pos.load(),
+            center,
             world.get_block_interaction(crate::world::ExplosionInteraction::Mob),
         )
         .with_source(self);
