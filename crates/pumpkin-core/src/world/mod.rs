@@ -4390,27 +4390,34 @@ impl World {
         }
     }
 
-    pub fn run_explosion(self: &Arc<Self>, explosion: &Explosion<'_>) {
-        let position = explosion.center();
-        let power = explosion.power();
+    /// The plugin event of an explosion. The credited owner is set whether or not the explosion
+    /// touches blocks (a fireball with `mobGriefing` off still has a shooter).
+    fn explosion_event(
+        explosion: &Explosion<'_>,
+    ) -> crate::plugin::api::events::entity::entity_explode::EntityExplodeEvent {
         let mut event = crate::plugin::api::events::entity::entity_explode::EntityExplodeEvent::new(
             explosion
                 .source()
                 .map_or(0, |source| source.get_entity().entity_id),
-            position,
-            power,
+            explosion.center(),
+            explosion.power(),
         );
+        event.owner_id = explosion
+            .indirect_source()
+            .map(|owner| owner.get_entity().entity_id);
+        event
+    }
+
+    pub fn run_explosion(self: &Arc<Self>, explosion: &Explosion<'_>) {
+        let position = explosion.center();
+        let power = explosion.power();
+        let mut event = Self::explosion_event(explosion);
         // Plugins see (and may trim) the blocks the explosion will destroy.
         let mut blocks = explosion
             .touches_blocks()
             .then(|| explosion.get_blocks_to_destroy(self));
         if let Some(blocks) = &blocks {
-            event = event.with_blocks(
-                blocks.keys().copied().collect(),
-                explosion
-                    .indirect_source()
-                    .map(|owner| owner.get_entity().entity_id),
-            );
+            event = event.with_blocks(blocks.keys().copied().collect());
         }
         if let Some(server) = self.server.upgrade() {
             server.plugin_manager.fire_blocking(&server, &mut event);
@@ -8589,6 +8596,30 @@ mod tests {
         NaturalSpawnChunkCache, World, bedrock_block_breaking_rate, bedrock_chest_block_actor,
         merge_entity_records, natural_spawn_chunk_count, spawn_list_for_tick,
     };
+
+    #[tokio::test]
+    async fn explosion_event_carries_the_owner_even_when_it_touches_no_blocks() {
+        use crate::entity::{Entity, EntityBase, passive::chicken::ChickenEntity};
+        use crate::world::explosion::{BlockInteraction, Explosion};
+        use pumpkin_data::entity::EntityType;
+        use pumpkin_util::math::vector3::Vector3;
+
+        let folder = tempfile::tempdir().unwrap();
+        let world = crate::entity::ai::test_support::world(&folder);
+        let owner = ChickenEntity::new(Entity::new(
+            world.clone(),
+            Vector3::default(),
+            &EntityType::CHICKEN,
+        ));
+        // A fireball (Mob interaction) with mobGriefing off: no blocks are touched.
+        let explosion = Explosion::new(1.0, Vector3::default(), BlockInteraction::Keep)
+            .with_indirect_source(Some(owner.clone()));
+        assert!(!explosion.touches_blocks());
+        let event = World::explosion_event(&explosion);
+        assert_eq!(event.owner_id, Some(owner.get_entity().entity_id));
+        assert!(event.blocks.is_empty());
+        world.level.shutdown().await;
+    }
 
     fn record(uuid: Option<Uuid>, id: &str) -> NbtCompound {
         let mut nbt = NbtCompound::new();

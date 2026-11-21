@@ -37,9 +37,8 @@ impl EntityExplodeEvent {
     }
 
     #[must_use]
-    pub fn with_blocks(mut self, blocks: Vec<BlockPos>, owner_id: Option<i32>) -> Self {
+    pub fn with_blocks(mut self, blocks: Vec<BlockPos>) -> Self {
         self.blocks = blocks;
-        self.owner_id = owner_id;
         self
     }
 }
