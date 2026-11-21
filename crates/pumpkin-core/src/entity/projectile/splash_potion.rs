@@ -155,6 +155,20 @@ impl EntityBase for SplashPotionEntity {
     fn on_hit(&self, hit: crate::entity::projectile::ProjectileHit) {
         let world = self.get_entity().world.load();
         let hit_pos = hit.hit_pos();
+        // 1.8 splashes where the potion stood at the start of the tick, and hands the full
+        // strength to the entity it hit.
+        let legacy = super::is_legacy(self.get_entity());
+        let direct_hit = match &hit {
+            crate::entity::projectile::ProjectileHit::Entity { entity, .. } if legacy => {
+                Some(entity.get_entity().entity_id)
+            }
+            _ => None,
+        };
+        let center = if legacy {
+            self.get_entity().last_pos.load()
+        } else {
+            hit_pos
+        };
 
         // Extinguish fire if it's a water potion
         let stack = self
@@ -263,8 +277,9 @@ impl EntityBase for SplashPotionEntity {
         }
 
         let radius = 4.0f64;
-        let min = Vector3::new(hit_pos.x - radius, hit_pos.y - radius, hit_pos.z - radius);
-        let max = Vector3::new(hit_pos.x + radius, hit_pos.y + radius, hit_pos.z + radius);
+        let vertical = if legacy { 2.0 } else { radius };
+        let min = Vector3::new(center.x - radius, center.y - vertical, center.z - radius);
+        let max = Vector3::new(center.x + radius, center.y + vertical, center.z + radius);
         let aabb = BoundingBox::new(min, max);
 
         // Gather entity and player candidates
@@ -278,12 +293,16 @@ impl EntityBase for SplashPotionEntity {
         for cand in candidates {
             if cand.get_living_entity().is_some() {
                 let pos = cand.get_entity().pos.load();
-                let dx = pos.x - hit_pos.x;
-                let dy = pos.y - hit_pos.y;
-                let dz = pos.z - hit_pos.z;
+                let dx = pos.x - center.x;
+                let dy = pos.y - center.y;
+                let dz = pos.z - center.z;
                 let dist = (dx * dx + dy * dy + dz * dz).sqrt();
                 if dist <= radius {
-                    let scale = (1.0f32 - (dist as f32 / radius as f32)).max(0.0);
+                    let scale = if direct_hit == Some(cand.get_entity().entity_id) {
+                        1.0
+                    } else {
+                        (1.0f32 - (dist as f32 / radius as f32)).max(0.0)
+                    };
                     affected.push((cand, scale));
                 }
             }
