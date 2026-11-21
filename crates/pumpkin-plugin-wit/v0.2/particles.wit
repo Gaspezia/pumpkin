@@ -131,4 +131,40 @@ interface particles {
     firefly,
     sulfur-cube-goo,
   }
+
+  /// `dust` colour (0xRRGGBB) and size.
+  record dust-data {
+    rgb: u32,
+    scale: f32,
+  }
+
+  /// `dust-color-transition` colours (0xRRGGBB) and size.
+  record dust-transition-data {
+    from-rgb: u32,
+    to-rgb: u32,
+    scale: f32,
+  }
+
+  /// Particles that carry data on the wire. Sent with `world.spawn-particle-data`.
+  variant particle-data {
+    /// `dust`.
+    dust(dust-data),
+    /// `dust-color-transition`.
+    dust-color-transition(dust-transition-data),
+    /// A particle textured by a block state id: `block`, `block-marker`, `falling-dust`,
+    /// `dust-pillar` or `block-crumble`.
+    block-state(block-state-data),
+    /// A particle tinted by an ARGB colour: `entity-effect`, `tinted-leaves` or `flash`.
+    color(color-data),
+  }
+
+  record block-state-data {
+    particle: particle,
+    state-id: u16,
+  }
+
+  record color-data {
+    particle: particle,
+    argb: u32,
+  }
 }

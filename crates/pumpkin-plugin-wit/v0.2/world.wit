@@ -3,7 +3,7 @@ interface %world {
     use block-entity.{block-entity, command-block-entity, block-entity-type};
     use text.{text-component};
     use scoreboard.{scoreboard};
-    use particles.{particle};
+    use particles.{particle, particle-data};
     use sounds.{sound, sound-category};
     use entity-types.{entity-type};
     use biomes.{biome};
@@ -1080,6 +1080,14 @@ interface %world {
 
         /// Spawns particles at the specified position.
         spawn-particle: func(particle: particle, pos: position, offset: position, max-speed: f32, count: s32);
+
+        /// Spawns particles that carry data (`dust`, `dust-color-transition`, block-state and
+        /// colour-tinted particles). Fails when the variant names a particle of another kind.
+        spawn-particle-data: func(data: particle-data, pos: position, offset: position, max-speed: f32, count: s32) -> result<_, string>;
+
+        /// Spawns `item` particles textured like the item with this registry key (with or
+        /// without `minecraft:`). Fails on an unknown item.
+        spawn-item-particle: func(item-id: string, pos: position, offset: position, max-speed: f32, count: s32) -> result<_, string>;
 
         /// Creates an explosion at the specified position.
         create-explosion: async func(pos: position, power: f32, create-fire: bool, interaction: explosion-interaction);

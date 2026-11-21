@@ -1075,6 +1075,63 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
         Ok(())
     }
 
+    fn spawn_particle_data(
+        &mut self,
+        world: Resource<World>,
+        data: pumpkin::plugin::particles::ParticleData,
+        pos: pumpkin::plugin::common::Position,
+        offset: pumpkin::plugin::common::Position,
+        max_speed: f32,
+        count: i32,
+    ) -> wasmtime::Result<Result<(), String>> {
+        let world_ref = self.get(&world)?;
+        let (particle, payload) = match encode_particle_data(&data) {
+            Ok(encoded) => encoded,
+            Err(error) => return Ok(Err(error)),
+        };
+        world_ref.spawn_particle_with_data(
+            particle,
+            pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
+            pumpkin_util::math::vector3::Vector3::new(
+                offset.0 as f32,
+                offset.1 as f32,
+                offset.2 as f32,
+            ),
+            max_speed,
+            count,
+            &payload,
+        );
+        Ok(Ok(()))
+    }
+
+    fn spawn_item_particle(
+        &mut self,
+        world: Resource<World>,
+        item_id: String,
+        pos: pumpkin::plugin::common::Position,
+        offset: pumpkin::plugin::common::Position,
+        max_speed: f32,
+        count: i32,
+    ) -> wasmtime::Result<Result<(), String>> {
+        let world_ref = self.get(&world)?;
+        let key = item_id.strip_prefix("minecraft:").unwrap_or(&item_id);
+        let Some(item) = pumpkin_data::item::Item::from_registry_key(key) else {
+            return Ok(Err(format!("Unknown item: {item_id}")));
+        };
+        world_ref.spawn_item_particle(
+            pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
+            pumpkin_util::math::vector3::Vector3::new(
+                offset.0 as f32,
+                offset.1 as f32,
+                offset.2 as f32,
+            ),
+            max_speed,
+            count,
+            &pumpkin_data::item_stack::ItemStack::new(1, item),
+        );
+        Ok(Ok(()))
+    }
+
     fn get_sea_level(&mut self, world: Resource<World>) -> wasmtime::Result<i32> {
         Ok(self.get(&world)?.sea_level)
     }
@@ -2995,6 +3052,60 @@ fn build_fireworks(
     )
 }
 
+/// Wire payload of a particle that carries data: the particle and its option bytes
+/// (1.21.x `ParticleOptions` encoding).
+fn encode_particle_data(
+    data: &pumpkin::plugin::particles::ParticleData,
+) -> Result<(pumpkin_data::particle::Particle, Vec<u8>), String> {
+    use pumpkin::plugin::particles::{Particle as Wit, ParticleData};
+    use pumpkin_data::particle::Particle;
+    let internal = |wit: Wit| {
+        Particle::from_id(wit as u16).ok_or_else(|| format!("Unknown particle ID: {}", wit as u16))
+    };
+    let mut buf = Vec::new();
+    match data {
+        ParticleData::Dust(d) => {
+            buf.extend_from_slice(&(d.rgb as i32).to_be_bytes());
+            buf.extend_from_slice(&d.scale.to_be_bytes());
+            Ok((Particle::Dust, buf))
+        }
+        ParticleData::DustColorTransition(d) => {
+            buf.extend_from_slice(&(d.from_rgb as i32).to_be_bytes());
+            buf.extend_from_slice(&(d.to_rgb as i32).to_be_bytes());
+            buf.extend_from_slice(&d.scale.to_be_bytes());
+            Ok((Particle::DustColorTransition, buf))
+        }
+        ParticleData::BlockState(d) => {
+            let particle = internal(d.particle)?;
+            if !matches!(
+                particle,
+                Particle::Block
+                    | Particle::BlockMarker
+                    | Particle::FallingDust
+                    | Particle::DustPillar
+                    | Particle::BlockCrumble
+            ) {
+                return Err(format!("{:?} does not take a block state", d.particle));
+            }
+            pumpkin_protocol::codec::var_int::VarInt(i32::from(d.state_id))
+                .encode(&mut buf)
+                .map_err(|e| e.to_string())?;
+            Ok((particle, buf))
+        }
+        ParticleData::Color(d) => {
+            let particle = internal(d.particle)?;
+            if !matches!(
+                particle,
+                Particle::EntityEffect | Particle::TintedLeaves | Particle::Flash
+            ) {
+                return Err(format!("{:?} does not take a colour", d.particle));
+            }
+            buf.extend_from_slice(&(d.argb as i32).to_be_bytes());
+            Ok((particle, buf))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3101,5 +3212,59 @@ mod tests {
                 Some(internal)
             );
         }
+    }
+
+    #[test]
+    fn particle_data_wire_encoding() {
+        use pumpkin::plugin::particles::{
+            BlockStateData, ColorData, DustData, DustTransitionData, Particle as W, ParticleData,
+        };
+        let (p, b) = encode_particle_data(&ParticleData::Dust(DustData {
+            rgb: 0x00FF_8000,
+            scale: 1.5,
+        }))
+        .unwrap();
+        assert_eq!(p, pumpkin_data::particle::Particle::Dust);
+        assert_eq!(b, [0, 0xFF, 0x80, 0, 0x3F, 0xC0, 0, 0]);
+
+        let (p, b) = encode_particle_data(&ParticleData::DustColorTransition(DustTransitionData {
+            from_rgb: 1,
+            to_rgb: 2,
+            scale: 1.0,
+        }))
+        .unwrap();
+        assert_eq!(p, pumpkin_data::particle::Particle::DustColorTransition);
+        assert_eq!(b, [0, 0, 0, 1, 0, 0, 0, 2, 0x3F, 0x80, 0, 0]);
+
+        let (p, b) = encode_particle_data(&ParticleData::BlockState(BlockStateData {
+            particle: W::Block,
+            state_id: 300,
+        }))
+        .unwrap();
+        assert_eq!(p, pumpkin_data::particle::Particle::Block);
+        assert_eq!(b, [0xAC, 0x02]);
+
+        let (p, b) = encode_particle_data(&ParticleData::Color(ColorData {
+            particle: W::EntityEffect,
+            argb: 0xFFFF_0000,
+        }))
+        .unwrap();
+        assert_eq!(p, pumpkin_data::particle::Particle::EntityEffect);
+        assert_eq!(b, [0xFF, 0xFF, 0, 0]);
+
+        assert!(
+            encode_particle_data(&ParticleData::Color(ColorData {
+                particle: W::Block,
+                argb: 0,
+            }))
+            .is_err()
+        );
+        assert!(
+            encode_particle_data(&ParticleData::BlockState(BlockStateData {
+                particle: W::Dust,
+                state_id: 1,
+            }))
+            .is_err()
+        );
     }
 }
