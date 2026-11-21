@@ -26,6 +26,12 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 28 | Combat PvP 1.8, lot 1 (melee) : `Player::attack_legacy` (sans recharge ni balayage ni son d'attaque, table d'armes 1.8, Force/Faiblesse, Tranchant/Chatiment/Fleau, critique en sprint, animations 4 et 5, epuisement 0,3, jauge d'attaque masquee) et `entity/combat_legacy.rs` (fonctions pures testees contre les vecteurs) | branche `gaspezia-patch/pvp18-melee` | aucune (propre au fork) | PR Gaspezia/pumpkin (PvP 1.8, lot 1) | 2026-11-20 |
 | 29 | Combat PvP 1.8, lot 1 (recul et sprint) : recul de base 1.8 (sans condition de sol, plafond 0,4, jet de resistance tout ou rien, direction depuis l'entite source), recul supplementaire (enchantement Recul + sprint) additif, arret du sprint serveur de l'attaquant, impulsion de saut du fantome serveur, borne +-3,9 du paquet | branche `gaspezia-patch/pvp18-knockback` | aucune (propre au fork) | PR Gaspezia/pumpkin (PvP 1.8, lot 1) | 2026-11-20 |
 | 38 | Combat PvP 1.8, E3 : saut du fantome serveur un pas plus tard et seuil de remise a zero de la vitesse 0,005 (parite Paper en l'air) | branche `gaspezia-patch/pvp18-ghost-air` | aucune (propre au fork) | PR Gaspezia/pumpkin #40 | 2026-11-21 |
+| 39 | `entity-explode-event` : `owner-id` pose meme si l'explosion ne touche aucun bloc (boule de feu avec `mobGriefing` coupe) | branche `gaspezia-patch/explosion-owner-id` | aucune (propre au fork) | PR Gaspezia/pumpkin #41 | 2026-11-21 |
+| 40 | Combat PvP 1.8, L8 : faim et regeneration naturelle 1.8 | branche `gaspezia-patch/pvp18-hunger` | aucune (propre au fork) | PR Gaspezia/pumpkin #42 | 2026-11-21 |
+| 41 | Combat PvP 1.8, L9 : degats et recul d'explosion 1.8 | branche `gaspezia-patch/pvp18-explosions` | aucune (propre au fork) | PR Gaspezia/pumpkin #43 | 2026-11-21 |
+| 42 | Suivi des joueurs recalcule quand le mode de jeu de l'observateur change (spectateur qui ne voyait pas les autres spectateurs) | branche `gaspezia-patch/spectator-retrack` | aucune (proposable) | PR Gaspezia/pumpkin #44 | 2026-11-21 |
+| 43 | Combat PvP 1.8, L9 : centre d'explosion de la TNT amorcee (milieu) et de la boule de feu (position avant le pas) | branche `gaspezia-patch/pvp18-tnt-center` | aucune (propre au fork) | PR Gaspezia/pumpkin #45 | 2026-11-21 |
+| 44 | Combat PvP 1.8, L9 : rangee des pieds gardee dans l'exposition d'explosion | branche `gaspezia-patch/pvp18-exposure-floor` | aucune (propre au fork) | PR Gaspezia/pumpkin #46 | 2026-11-21 |
 | 37 | Combat PvP 1.8, lot 3 (L7, canne a peche) : lancer 1,5, gravite 0,04 puis trainee 0,92/0,5, accroche par un coup a 0 degat (recul et invulnerabilite), jamais de traction d'un joueur, flotteur retire si la canne n'est plus tenue | branche `gaspezia-patch/pvp18-rod` | aucune (propre au fork) | PR Gaspezia/pumpkin #39 | 2026-11-21 |
 | 36 | Combat PvP 1.8, lot 3 (L6, projectiles) : depart a l'oeil avec decalage lateral 0,16, imprecision gaussienne 0,0075, ordre deplacement-trainee-gravite des objets lances, fleche dans l'eau, marge de collision 0,3, tireur touchable apres 5 ticks, Frappe sans resistance, potion jetable | branche `gaspezia-patch/pvp18-projectiles` | aucune (propre au fork) | PR Gaspezia/pumpkin #38 | 2026-11-21 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
@@ -333,6 +339,45 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : Pumpkin traite les paquets a l'arrivee et non au debut du tick : un coup tombe parfois un tick de fantome plus tot (jitter d'un pas) ; le seuil 0,005 s'applique a toute entite vivante du monde legacy.
 - Propre au fork (jamais propose upstream).
 
+### Patch 39 : `owner-id` de `entity-explode-event` sans bloc touche
+
+- Quoi : `run_explosion` ne posait `owner_id` que dans `with_blocks`, appele seulement si `explosion.touches_blocks()`. Une boule de feu explose en `ExplosionInteraction::Mob`, qui garde les blocs quand `mobGriefing` est coupe : l'evenement arrivait sans proprietaire alors que `indirect_source` le connait. L'evenement est construit avec le proprietaire (`World::explosion_event`).
+- Pourquoi : credit de kill par boule de feu (BedWars), tous les modes.
+- Fichiers : `crates/pumpkin-core/src/world/mod.rs`, `plugin/api/events/entity/entity_explode.rs` (test `explosion_event_carries_the_owner_even_when_it_touches_no_blocks`).
+- Propre au fork.
+
+### Patch 40 : faim et regeneration 1.8 (L8)
+
+- Quoi : en `legacy_1_8`, `FoodStats.onUpdate` de 1.8 : +1 PV tous les 80 ticks a faim >= 18 pour 3,0 d'epuisement, quelle que soit la saturation (pas de regeneration rapide de la 1.9) ; epuisement au-dessus de 4 : saturation puis faim ; famine toutes les 80 ticks a faim 0. Fonction pure `legacy_step`, 3 tests. Mesure au banc : 5 gains espaces de 4 s, comme Paper.
+- Fichiers : `crates/pumpkin-core/src/entity/hunger.rs`.
+- Limites : les pommes et la saturation des aliments gardent les valeurs modernes.
+- Propre au fork.
+
+### Patch 41 : explosions 1.8 (L9)
+
+- Quoi : en `legacy_1_8`, `Explosion.doExplosionA` de 1.8 sur les entites : degats `(int)((d10^2 + d10)/2 * 8 * rayon + 1)` avec `d10 = (1 - distance/rayon) * exposition` (au moins 1 dans le rayon, meme sans exposition), recul `direction * d10` (la Protection contre les explosions arrondit a 0 en 1.8 : elle ne reduit que les degats, par la chaine L4), sans resistance au recul ni pour un joueur creatif, SPIGOT-949 (la fenetre d'invulnerabilite n'annule pas le recul, la TNT amorcee est toujours poussee).
+- Fichiers : `crates/pumpkin-core/src/world/explosion.rs`, `entity/combat_legacy.rs` (`explosion_damage`, `explosion_push_reduced`, tests), `entity/living.rs`.
+- Propre au fork. Remarque : le chemin moderne multiplie par `7 * puissance` ou vanilla utilise `7 * rayon` (a verifier, non touche).
+
+### Patch 42 : suivi recalcule au changement de mode de l'observateur
+
+- Quoi : un spectateur n'est suivi que par les spectateurs (conforme a vanilla), mais `set_gamemode` ne relancait jamais le suivi : un joueur qui passait spectateur ne recevait pas les autres spectateurs (et les autres gardaient une vue perimee de lui) tant que personne ne bougeait ; `show_player` sortait tot si rien n'etait masque. `set_gamemode` relance maintenant `update_players` (le joueur comme cible) et `update_player` (comme observateur) ; `show_player` reevalue la cible meme non masquee. Compatible avec `hide-player` (la liste masquee reste lue par `broadcast_to_player`).
+- Verification : sonde `spectator-retrack.js` (spectateur cible deja la a la connexion, l'observateur passe spectateur sans que personne ne bouge) : avant, il ne le voyait jamais ; apres, il le voit et le perd au retour en survie.
+- Fichiers : `crates/pumpkin-core/src/entity/player.rs`.
+- Propre au fork (proposable).
+
+### Patch 43 : centres d'explosion 1.8
+
+- Quoi : en `legacy_1_8`, la TNT amorcee explose a `y + hauteur/2` (Spigot 1.8.8 ; 4,49 pour une TNT en y = 4, contre `0,0625 * hauteur` en moderne) et la boule de feu a sa position avant le pas qui touche (3,92 contre la face du mur a 4,0 chez Paper).
+- Fichiers : `crates/pumpkin-core/src/entity/tnt.rs`, `entity/projectile/fireball.rs`.
+- Propre au fork.
+
+### Patch 44 : rangee des pieds de l'exposition d'explosion
+
+- Quoi : la marche de rayon moderne part 1e-7 derriere son origine : un echantillon pose sur la face superieure du sol (la rangee des pieds d'une entite au sol) demarre dans le sol et est bloque, soit 0,8 de l'exposition (poussee et degats) contre 1,0 chez Paper. Les echantillons sont releves de 1e-6 en `legacy_1_8` seulement.
+- Fichiers : `crates/pumpkin-core/src/world/explosion.rs`.
+- Propre au fork.
+
 ## CI du fork
 
 - `rust.yml`, job `Run lints` : le runner hebergé tuait le job (exit 143, aucun pas en échec, vers 1 min 30) pendant clippy sur `pumpkin-core` (mémoire). Le job ajoute 8 Go de swap et limite `CARGO_BUILD_JOBS=2`. Diagnostic : SIGTERM sans message d'erreur, toujours au même endroit, reproductible sur run neuf.
@@ -371,3 +416,4 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 31 seul, sans fusion upstream) | aucun | - | tests `pumpkin-wasm-host-v0_2` OK |
 | 2026-11-20 | aucun (patch 32 seul, sans fusion upstream) | aucun | - | tests `pumpkin-wasm-host-v0_2` OK |
 | 2026-11-20 | aucun (patch 33 seul, sans fusion upstream) | aucun | - | clippy + tests `pumpkin-core` `combat_legacy` OK |
+| 2026-11-21 | aucun (patchs 39 a 44 seuls, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK, CI Linux verte, banc Paper 1.8.8 |
