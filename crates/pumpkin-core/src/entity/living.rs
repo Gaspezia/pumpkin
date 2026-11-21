@@ -4053,6 +4053,25 @@ impl LivingEntity {
         crate::entity::combat_legacy::protection_reduced(damage, factor)
     }
 
+    /// Best Blast Protection level among the worn armor (1.8 `getMaxEnchantmentLevel`).
+    pub(crate) fn max_blast_protection_level(&self) -> i32 {
+        let equipment = self
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        [
+            EquipmentSlot::HEAD,
+            EquipmentSlot::CHEST,
+            EquipmentSlot::LEGS,
+            EquipmentSlot::FEET,
+        ]
+        .iter()
+        .filter_map(|slot| equipment.equipment.get(slot))
+        .map(|stack| stack.get_enchantment_level(&Enchantment::BLAST_PROTECTION))
+        .max()
+        .unwrap_or(0)
+    }
+
     /// Health a hit of `amount` would take off this entity, as `damage_with_context` computes it
     /// (helmet, hurt cooldown, armor, resistance and enchantments, absorption), with no side effect.
     /// Item blocking is not previewed (it can have side effects).
