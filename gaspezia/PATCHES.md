@@ -25,6 +25,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 27 | Combat PvP 1.8, lot 1 (activation) : `[pvp] combat = "legacy_1_8"` et `World::combat_mode()` ; aucun changement de comportement | branche `gaspezia-patch/pvp18-activation` | aucune (propre au fork) | PR Gaspezia/pumpkin (PvP 1.8, lot 1) | 2026-11-20 |
 | 28 | Combat PvP 1.8, lot 1 (melee) : `Player::attack_legacy` (sans recharge ni balayage ni son d'attaque, table d'armes 1.8, Force/Faiblesse, Tranchant/Chatiment/Fleau, critique en sprint, animations 4 et 5, epuisement 0,3, jauge d'attaque masquee) et `entity/combat_legacy.rs` (fonctions pures testees contre les vecteurs) | branche `gaspezia-patch/pvp18-melee` | aucune (propre au fork) | PR Gaspezia/pumpkin (PvP 1.8, lot 1) | 2026-11-20 |
 | 29 | Combat PvP 1.8, lot 1 (recul et sprint) : recul de base 1.8 (sans condition de sol, plafond 0,4, jet de resistance tout ou rien, direction depuis l'entite source), recul supplementaire (enchantement Recul + sprint) additif, arret du sprint serveur de l'attaquant, impulsion de saut du fantome serveur, borne +-3,9 du paquet | branche `gaspezia-patch/pvp18-knockback` | aucune (propre au fork) | PR Gaspezia/pumpkin (PvP 1.8, lot 1) | 2026-11-20 |
+| 38 | Combat PvP 1.8, E3 : saut du fantome serveur un pas plus tard et seuil de remise a zero de la vitesse 0,005 (parite Paper en l'air) | branche `gaspezia-patch/pvp18-ghost-air` | aucune (propre au fork) | PR Gaspezia/pumpkin #40 | 2026-11-21 |
 | 37 | Combat PvP 1.8, lot 3 (L7, canne a peche) : lancer 1,5, gravite 0,04 puis trainee 0,92/0,5, accroche par un coup a 0 degat (recul et invulnerabilite), jamais de traction d'un joueur, flotteur retire si la canne n'est plus tenue | branche `gaspezia-patch/pvp18-rod` | aucune (propre au fork) | PR Gaspezia/pumpkin #39 | 2026-11-21 |
 | 36 | Combat PvP 1.8, lot 3 (L6, projectiles) : depart a l'oeil avec decalage lateral 0,16, imprecision gaussienne 0,0075, ordre deplacement-trainee-gravite des objets lances, fleche dans l'eau, marge de collision 0,3, tireur touchable apres 5 ticks, Frappe sans resistance, potion jetable | branche `gaspezia-patch/pvp18-projectiles` | aucune (propre au fork) | PR Gaspezia/pumpkin #38 | 2026-11-21 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
@@ -322,6 +323,14 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Pourquoi : la canne des kits d'Arena (combo canne et ecart de portee).
 - Fichiers : `crates/pumpkin-core/src/entity/projectile/fishing_bobber.rs`, `item/items/fishing_rod.rs`, `entity/projectile_legacy.rs`.
 - Limites : l'immersion est tout ou rien (1.8 echantillonne 5 tranches de la boite) ; le flotteur ne se fige plus au sol en legacy (il glisse avec la trainee 0,5, comme en 1.8) ; la peche (attente, morsure) garde le code moderne ; la position du flotteur accroche n'est pas resynchronisee (le client le place sur l'entite accrochee) ; mesure au banc : portee 10,9 a 11,3 blocs (Paper 10,8 a 11,3, moderne 8,2).
+- Propre au fork (jamais propose upstream).
+
+### Patch 38 : fantome du joueur en l'air, parite Paper (E3)
+
+- Quoi : en mode `legacy_1_8`, (1) `jump_legacy` leve le mouvement du fantome d'un pas (`ghost_jump_lead` : `v / 0,98 + 0,08` en vertical, `/ 0,91` en horizontal) : 1.8 traite le paquet du saut apres la mise a jour du tick, ici avant, donc le premier pas de chute tombait un tick trop tot ; (2) `Entity::check_zero_velo` remet a 0 chaque axe sous 0,005 (le moderne : 0,003 et horizontal groupe pour les joueurs), ce qui annule l'apogee `0,0038` du saut comme en 1.8.
+- Pourquoi : mesure en release au banc (E3 du lot 2) : la victime en plein saut recevait un recul vertical d'un pas de chute trop bas (0,3238 au lieu de 0,36075 a 7 ticks). Apres le correctif : 0,3608 ; 0,3224 ; 0,2847 ; 0,2478 a 7, 8, 9 et 10 ticks = Paper.
+- Fichiers : `crates/pumpkin-core/src/entity/combat_legacy.rs` (`ghost_jump_lead`, `ZERO_MOTION_THRESHOLD`, test `e3_...`), `entity/player/attack_legacy.rs`, `entity/mod.rs`.
+- Limites : Pumpkin traite les paquets a l'arrivee et non au debut du tick : un coup tombe parfois un tick de fantome plus tot (jitter d'un pas) ; le seuil 0,005 s'applique a toute entite vivante du monde legacy.
 - Propre au fork (jamais propose upstream).
 
 ## CI du fork
