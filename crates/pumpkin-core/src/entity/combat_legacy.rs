@@ -351,6 +351,16 @@ mod tests {
         base_knockback(ghost, 0.0, -2.0, || 0.5)
     }
 
+    /// E1: the ghost falls, so a victim in the air is lifted from its real vertical motion
+    /// (Paper 1.8.8: `-0.2308` gives `0.28463`), and a rising one is capped at `0.4`.
+    #[test]
+    fn e1_airborne_victim_uses_real_vertical_motion() {
+        assert!((hit(Vector3::new(0.0, -0.2308, 0.0)).y - 0.2846).abs() < 1.0e-4);
+        assert!((hit(Vector3::new(0.0, 0.42, 0.0)).y - 0.4).abs() < 1.0e-6);
+        // Gravity of the ghost at rest: `(0 - 0.08) * 0.98`, the value of `GHOST_ON_GROUND`.
+        assert!(((0.0 - 0.08f64) * 0.98 - GHOST_ON_GROUND).abs() < 1.0e-6);
+    }
+
     #[test]
     fn v1_plain_hit_on_still_victim() {
         let v = hit(Vector3::new(0.0, GHOST_ON_GROUND, 0.0));

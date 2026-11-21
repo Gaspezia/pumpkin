@@ -98,7 +98,9 @@ impl JavaClient {
         // `legacy_1_8`: a sword blocks while the button is held (1.8 `setItemInUse(72000)`). The
         // server stack has no `consumable`, so it is never eaten; the client gets one on the wire.
         if player.world().combat_mode().is_legacy()
-            && held.item.has_tag(&pumpkin_data::tag::Item::MINECRAFT_SWORDS)
+            && held
+                .item
+                .has_tag(&pumpkin_data::tag::Item::MINECRAFT_SWORDS)
             && held.get_data_component::<ConsumableImpl>().is_none()
         {
             player

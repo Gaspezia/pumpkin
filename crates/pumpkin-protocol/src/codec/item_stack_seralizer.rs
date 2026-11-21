@@ -6,16 +6,16 @@ use pumpkin_data::data_component_impl::{
     AttackRangeImpl, ConsumableImpl, ConsumeAnimation, CustomDataImpl, CustomNameImpl,
     DataComponentImpl, IdOr, ItemNameImpl,
 };
-use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::sound::Sound;
+use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::version::JavaMinecraftVersion;
-use pumpkin_data::sound::Sound;
 use std::borrow::Cow;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::io::Cursor;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// `[pvp] combat = "legacy_1_8"`: swords go out with the components that give a 26.x client the
 /// 1.8 blocking pose and reach. Set once at server start.
@@ -33,10 +33,7 @@ fn wire_stack(stack: &ItemStack) -> Cow<'_, ItemStack> {
 }
 
 fn wire_stack_with(stack: &ItemStack, legacy: bool) -> Cow<'_, ItemStack> {
-    if !legacy
-        || stack.is_empty()
-        || !stack.item.has_tag(&tag::Item::MINECRAFT_SWORDS)
-    {
+    if !legacy || stack.is_empty() || !stack.item.has_tag(&tag::Item::MINECRAFT_SWORDS) {
         return Cow::Borrowed(stack);
     }
     let mut stack = stack.clone();
