@@ -26,8 +26,100 @@ impl Default for HungerManager {
     }
 }
 
+/// Result of one `legacy_1_8` food tick.
+#[derive(Debug, PartialEq)]
+struct LegacyFoodStep {
+    level: u8,
+    saturation: f32,
+    exhaustion: f32,
+    timer: u32,
+    heal: bool,
+    starve: bool,
+}
+
+/// 1.8 `FoodStats.onUpdate`: exhaustion above 4 costs saturation, then food; at food >= 18 the
+/// player heals 1 HP every 80 ticks for 3.0 exhaustion, whatever the saturation (the 1.9 fast
+/// regeneration does not exist); at 0 food, 1 starve damage every 80 ticks.
+fn legacy_step(
+    (mut level, mut saturation, mut exhaustion, mut timer): (u8, f32, f32, u32),
+    difficulty: Difficulty,
+    natural_regen: bool,
+    can_heal: bool,
+    health: f32,
+) -> LegacyFoodStep {
+    let (mut heal, mut starve) = (false, false);
+    if exhaustion > EXHAUSTION_COST {
+        exhaustion -= EXHAUSTION_COST;
+        if saturation > 0.0 {
+            saturation = (saturation - 1.0).max(0.0);
+        } else if difficulty != Difficulty::Peaceful {
+            level = level.saturating_sub(1);
+        }
+    }
+    if natural_regen && level >= 18 && can_heal {
+        timer += 1;
+        if timer >= 80 {
+            heal = true;
+            exhaustion = (exhaustion + 3.0).min(MAX_EXHAUSTION);
+            timer = 0;
+        }
+    } else if level == 0 {
+        timer += 1;
+        if timer >= 80 {
+            starve = health > 10.0
+                || difficulty == Difficulty::Hard
+                || (health > 1.0 && difficulty == Difficulty::Normal);
+            timer = 0;
+        }
+    } else {
+        timer = 0;
+    }
+    LegacyFoodStep {
+        level,
+        saturation,
+        exhaustion,
+        timer,
+        heal,
+        starve,
+    }
+}
+
 impl HungerManager {
+    fn tick_legacy(&self, player: &Player) {
+        let level_info = player.world().level_info.load();
+        let step = legacy_step(
+            (
+                self.level.load(),
+                self.saturation.load(),
+                self.exhaustion.load(),
+                self.tick_timer.load(),
+            ),
+            level_info.difficulty,
+            level_info.game_rules.natural_health_regeneration,
+            player.can_food_heal(),
+            player.living_entity.health.load(),
+        );
+        let changed = step.level != self.level.load() || step.saturation != self.saturation.load();
+        self.level.store(step.level);
+        self.saturation.store(step.saturation);
+        self.exhaustion.store(step.exhaustion);
+        self.tick_timer.store(step.timer);
+        if changed {
+            player.send_health();
+        }
+        if step.heal {
+            player.heal(1.0);
+        }
+        if step.starve {
+            player.living_entity.damage(player, 1.0, DamageType::STARVE);
+        }
+    }
+
     pub fn tick(&self, player: &Player) {
+        if player.world().combat_mode().is_legacy() {
+            self.tick_legacy(player);
+            return;
+        }
         let mut level = self.level.load();
         let mut saturation = self.saturation.load();
         let mut exhaustion = self.exhaustion.load();
@@ -182,3 +274,46 @@ impl NBTStorage for HungerManager {
 }
 
 impl NBTStorageInit for HungerManager {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(ticks: u32, state: (u8, f32, f32, u32), health: f32) -> (u32, LegacyFoodStep) {
+        let (mut heals, mut st) = (0, state);
+        let mut last = legacy_step(st, Difficulty::Normal, true, true, health);
+        for _ in 0..ticks {
+            last = legacy_step(st, Difficulty::Normal, true, true, health);
+            heals += u32::from(last.heal);
+            st = (last.level, last.saturation, last.exhaustion, last.timer);
+        }
+        (heals, last)
+    }
+
+    #[test]
+    fn legacy_heals_one_hp_every_80_ticks_without_fast_regeneration() {
+        // Full food and a lot of saturation: still 1 HP per 80 ticks (no 1.9 fast regeneration).
+        let (heals, last) = run(80, (20, 20.0, 0.0, 0), 10.0);
+        assert_eq!(heals, 1);
+        assert_eq!(last.exhaustion, 3.0);
+        assert_eq!(run(79, (20, 20.0, 0.0, 0), 10.0).0, 0);
+        assert_eq!(run(240, (20, 20.0, 0.0, 0), 10.0).0, 3);
+    }
+
+    #[test]
+    fn legacy_exhaustion_burns_saturation_then_food() {
+        let s = legacy_step((20, 1.0, 4.5, 0), Difficulty::Normal, true, true, 20.0);
+        assert_eq!((s.level, s.saturation, s.exhaustion), (20, 0.0, 0.5));
+        let s = legacy_step((20, 0.0, 4.5, 0), Difficulty::Normal, true, true, 20.0);
+        assert_eq!((s.level, s.exhaustion), (19, 0.5));
+    }
+
+    #[test]
+    fn legacy_no_heal_below_18_food_and_starvation_rules() {
+        assert_eq!(run(80, (17, 5.0, 0.0, 0), 10.0).0, 0);
+        let s = legacy_step((0, 0.0, 0.0, 79), Difficulty::Normal, true, true, 1.0);
+        assert!(!s.starve);
+        let s = legacy_step((0, 0.0, 0.0, 79), Difficulty::Hard, true, true, 1.0);
+        assert!(s.starve);
+    }
+}
