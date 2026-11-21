@@ -354,18 +354,22 @@ pub fn invulnerability(
     }
 }
 
-/// 1.8 explosion damage on an entity: `d10 = (1 - distance / radius) * exposure`, damage
-/// `(int)((d10² + d10) / 2 * 8 * radius + 1)` with `radius = 2 * power` (a `float` in 1.8).
-/// An entity in range takes at least 1, even with no exposure.
+/// 1.8 explosion damage on an entity.
+///
+/// `d10 = (1 - distance / radius) * exposure`, damage `(int)((d10² + d10) / 2 * 8 * radius + 1)`
+/// with `radius = 2 * power` (a `float` in 1.8). An entity in range takes at least 1, even with
+/// no exposure.
 #[must_use]
 pub fn explosion_damage(d10: f64, power: f32) -> f32 {
     let radius = f64::from(power * 2.0);
-    ((d10 * d10 + d10) / 2.0 * 8.0 * radius + 1.0) as i32 as f32
+    (f64::midpoint(d10 * d10, d10) * 8.0 * radius + 1.0) as i32 as f32
 }
 
-/// 1.8 `EnchantmentProtection.func_92092_a`: the push a living entity receives, `d10` reduced by
-/// `floor(d10 * level * 0.15)` for its best Blast Protection piece. As `d10 <= 1`, this floors to 0
-/// up to level 6: the enchantment does not reduce the push in 1.8 (it reduces the damage only).
+/// 1.8 `EnchantmentProtection.func_92092_a`: the push a living entity receives.
+///
+/// `d10` is reduced by `floor(d10 * level * 0.15)` for its best Blast Protection piece. As
+/// `d10 <= 1`, this floors to 0 up to level 6: the enchantment does not reduce the push in 1.8
+/// (it reduces the damage only).
 #[must_use]
 pub fn explosion_push_reduced(d10: f64, blast_level: i32) -> f64 {
     if blast_level > 0 {

@@ -506,6 +506,7 @@ impl<'a> Explosion<'a> {
         map
     }
 
+    #[allow(clippy::too_many_lines)]
     fn damage_entities(&self, world: &Arc<World>) {
         // Explosion is too small
         if self.power < 1.0e-5 {
@@ -617,7 +618,7 @@ impl<'a> Explosion<'a> {
             };
             let direction = (dir_pos - self.pos).normalize();
             if legacy {
-                self.push_entity_legacy(
+                Self::push_entity_legacy(
                     entity_base.as_ref(),
                     direction,
                     (1.0 - distance) * exposure,
@@ -655,13 +656,13 @@ impl<'a> Explosion<'a> {
     /// 1.8 push: `direction * d10` (reduced by Blast Protection for the server-side motion of a
     /// living entity, not for the packet a player gets), no knockback resistance, none for a
     /// creative player.
-    fn push_entity_legacy(&self, entity_base: &dyn EntityBase, direction: Vector3<f64>, d10: f64) {
+    fn push_entity_legacy(entity_base: &dyn EntityBase, direction: Vector3<f64>, d10: f64) {
         if !direction.x.is_finite() || !d10.is_finite() {
             return;
         }
         let entity = entity_base.get_entity();
         let player = entity_base.get_player();
-        if player.is_some_and(|player| player.is_creative()) {
+        if player.is_some_and(crate::entity::player::Player::is_creative) {
             return;
         }
         let d11 = if player.is_some() {
