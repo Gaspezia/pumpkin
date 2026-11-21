@@ -292,6 +292,10 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : la fenetre d'invulnerabilite du moderne (compteur > 10, seul le surplus passe, brut memorise apres le casque) est deja la regle 1.8 : inchangee ; l'usure `max(1, floor(d/4))` est deja celle du moderne ; `block_reduced` et `invulnerability` sont prets pour le blocage a l'epee (L5, non fait : composants `consumable`/`attack_range` et utilisation de 72000 ticks restent a faire) ; les sources « sans armure » suivent la balise `bypasses_armor` moderne ; la Resistance garde le code moderne (meme formule).
 - Propre au fork (jamais propose upstream).
 
+## CI du fork
+
+- `rust.yml`, job `Run lints` : le runner hebergé tuait le job (exit 143, aucun pas en échec, vers 1 min 30) pendant clippy sur `pumpkin-core` (mémoire). Le job ajoute 8 Go de swap et limite `CARGO_BUILD_JOBS=2`. Diagnostic : SIGTERM sans message d'erreur, toujours au même endroit, reproductible sur run neuf.
+
 ## Journal des mises a jour
 
 | Date | Commits upstream integres | Conflits | Duree | Build |
