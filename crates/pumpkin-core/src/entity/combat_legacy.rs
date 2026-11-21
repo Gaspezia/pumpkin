@@ -246,6 +246,90 @@ pub fn clamp_packet_velocity(velocity: Vector3<f64>) -> Vector3<f64> {
     )
 }
 
+/// Damage after the 1.8 armor: 4 % per armor point, no toughness (`d * (25 - points) / 25`).
+#[must_use]
+pub fn armor_reduced(damage: f32, points: i32) -> f32 {
+    damage * (25 - points) as f32 / 25.0
+}
+
+/// Damage after Resistance: `d * (25 - 5 (amp + 1)) / 25`, never below zero.
+#[must_use]
+pub fn resistance_reduced(damage: f32, amplifier: i32) -> f32 {
+    (damage * (25 - (amplifier + 1) * 5) as f32 / 25.0).max(0.0)
+}
+
+/// Protection points of one enchantment level: `floor((6 + level^2) / 3 * factor)`.
+///
+/// `factor` is 0.75 (Protection), 1.25 (Fire Protection against fire), 2.5 (Feather Falling against falls),
+/// 1.5 (Blast Protection against explosions, Projectile Protection against projectiles).
+#[must_use]
+pub fn protection_points(level: i32, factor: f32) -> i32 {
+    ((6 + level * level) as f32 / 3.0 * factor).floor() as i32
+}
+
+/// Effective protection factor drawn from the summed points of the armor: the sum is capped at 25,
+/// then `ceil(s / 2) + rand[0, floor(s / 2)]`, capped at 20. `random_below(n)` returns `[0, n)`.
+#[must_use]
+pub fn protection_roll(sum: i32, random_below: impl FnOnce(i32) -> i32) -> i32 {
+    let sum = sum.min(25);
+    if sum <= 0 {
+        return 0;
+    }
+    (((sum + 1) >> 1) + random_below((sum >> 1) + 1)).min(20)
+}
+
+/// Same draw, replaced by its rounded mean: the preview given to plugins must not roll.
+#[must_use]
+pub const fn protection_mean(sum: i32) -> i32 {
+    let sum = if sum > 25 { 25 } else { sum };
+    if sum <= 0 {
+        return 0;
+    }
+    let mean = ((sum + 1) >> 1) + (sum >> 1) / 2;
+    if mean > 20 { 20 } else { mean }
+}
+
+/// Damage after the Protection factor `k` (capped at 20): `d * (25 - k) / 25`.
+#[must_use]
+pub fn protection_reduced(damage: f32, factor: i32) -> f32 {
+    let factor = factor.min(20);
+    if factor > 0 {
+        damage * (25 - factor) as f32 / 25.0
+    } else {
+        damage
+    }
+}
+
+/// Damage after blocking with a sword: `(1 + d) / 2`.
+#[must_use]
+pub const fn block_reduced(damage: f32) -> f32 {
+    f32::midpoint(1.0, damage)
+}
+
+/// Durability lost by each armor piece for a hit of `damage` (before the reduction).
+#[must_use]
+pub fn armor_wear(damage: f32) -> i32 {
+    ((damage / 4.0) as i32).max(1)
+}
+
+/// Invulnerability window (`maxHurtResistantTime` 20).
+///
+/// While the counter is above 10 only the part of a hit above the raw amount of the previous one lands. Returns `(landing damage, full hit)`,
+/// `None` when the hit is refused. The caller stores the RAW `damage` as the new last damage.
+#[must_use]
+pub fn invulnerability(
+    counter: i32,
+    last_damage: f32,
+    damage: f32,
+    bypasses_cooldown: bool,
+) -> Option<(f32, bool)> {
+    if counter > 10 && !bypasses_cooldown {
+        (damage > last_damage).then_some((damage - last_damage, false))
+    } else {
+        Some((damage, true))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -470,5 +554,68 @@ mod tests {
         assert!(!is_critical(0.1, false, false, false, true, false, true));
         assert!(!is_critical(0.1, false, false, false, false, true, true));
         assert!(!is_critical(0.1, false, false, false, false, false, false));
+    }
+
+    fn near(a: f32, b: f32) {
+        assert!((a - b).abs() < 1e-5, "{a} != {b}");
+    }
+
+    #[test]
+    fn d5_full_diamond_armor_with_and_without_block() {
+        near(armor_reduced(8.0, 20), 1.6);
+        near(armor_reduced(block_reduced(8.0), 20), 0.9);
+    }
+
+    #[test]
+    fn d6_protection_iv_on_four_pieces() {
+        let sum: i32 = (0..4).map(|_| protection_points(4, 0.75)).sum();
+        assert_eq!(sum, 20);
+        let low = protection_reduced(1.6, protection_roll(sum, |_| 0));
+        let high = protection_reduced(1.6, protection_roll(sum, |n| n - 1));
+        near(low, 1.6 * 15.0 / 25.0);
+        near(high, 1.6 * 5.0 / 25.0);
+        assert_eq!(protection_roll(sum, |n| n - 1), 20);
+        assert_eq!(protection_mean(sum), 15);
+    }
+
+    #[test]
+    fn p5_protection_points_per_level() {
+        let p: Vec<i32> = (1..=4).map(|l| protection_points(l, 0.75)).collect();
+        assert_eq!(p, [1, 2, 3, 5]);
+        assert_eq!(protection_points(4, 2.5), 18);
+    }
+
+    #[test]
+    fn protection_roll_caps_and_empty() {
+        assert_eq!(protection_roll(0, |_| 0), 0);
+        assert_eq!(protection_roll(40, |n| n - 1), 20);
+        near(protection_reduced(10.0, 0), 10.0);
+    }
+
+    #[test]
+    fn resistance_levels() {
+        near(resistance_reduced(10.0, 0), 8.0);
+        near(resistance_reduced(10.0, 4), 0.0);
+    }
+
+    #[test]
+    fn d7_invulnerability_keeps_the_raw_amount() {
+        assert_eq!(invulnerability(20, 8.0, 12.0, false), Some((4.0, false)));
+        assert_eq!(invulnerability(20, 8.0, 8.0, false), None);
+        assert_eq!(invulnerability(10, 8.0, 12.0, false), Some((12.0, true)));
+        assert_eq!(invulnerability(20, 8.0, 3.0, true), Some((3.0, true)));
+    }
+
+    #[test]
+    fn d8_zero_damage_hit_then_sword() {
+        // The rod (0 damage) sets last damage 0: the sword lands whole.
+        assert_eq!(invulnerability(20, 0.0, 8.0, false), Some((8.0, false)));
+    }
+
+    #[test]
+    fn d9_armor_wear() {
+        assert_eq!(armor_wear(8.0), 2);
+        assert_eq!(armor_wear(1.0), 1);
+        assert_eq!(armor_wear(15.9), 3);
     }
 }

@@ -3864,6 +3864,9 @@ impl LivingEntity {
             return damage;
         }
         let armor = self.get_attribute_value(&Attributes::ARMOR).floor() as f32;
+        if self.entity.world.load().combat_mode().is_legacy() {
+            return crate::entity::combat_legacy::armor_reduced(damage, armor as i32);
+        }
         let toughness = self.get_attribute_value(&Attributes::ARMOR_TOUGHNESS) as f32;
 
         let breach_level = attacker
@@ -3940,6 +3943,10 @@ impl LivingEntity {
             return damage;
         }
 
+        if self.entity.world.load().combat_mode().is_legacy() {
+            return self.legacy_protection_reduced(damage, damage_type, record_stats);
+        }
+
         let mut epf = 0.0f32;
         {
             let equipment_lock = self
@@ -3968,6 +3975,71 @@ impl LivingEntity {
         }
 
         damage
+    }
+
+    /// 1.8 Protection: points of every armor piece and matching enchantment are summed, then
+    /// drawn at random (`record_stats` false takes the mean instead, so previews do not roll).
+    fn legacy_protection_reduced(&self, damage: f32, damage_type: &DamageType, roll: bool) -> f32 {
+        use crate::entity::combat_legacy::{protection_mean, protection_points, protection_roll};
+        let factors = [
+            (&Enchantment::PROTECTION, Some(0.75)),
+            (
+                &Enchantment::FIRE_PROTECTION,
+                damage_type
+                    .has_tag(&tag::DamageType::MINECRAFT_IS_FIRE)
+                    .then_some(1.25),
+            ),
+            (
+                &Enchantment::FEATHER_FALLING,
+                damage_type
+                    .has_tag(&tag::DamageType::MINECRAFT_IS_FALL)
+                    .then_some(2.5),
+            ),
+            (
+                &Enchantment::BLAST_PROTECTION,
+                damage_type
+                    .has_tag(&tag::DamageType::MINECRAFT_IS_EXPLOSION)
+                    .then_some(1.5),
+            ),
+            (
+                &Enchantment::PROJECTILE_PROTECTION,
+                damage_type
+                    .has_tag(&tag::DamageType::MINECRAFT_IS_PROJECTILE)
+                    .then_some(1.5),
+            ),
+        ];
+        let mut sum = 0;
+        {
+            let equipment = self
+                .entity_equipment
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for slot in [
+                EquipmentSlot::HEAD,
+                EquipmentSlot::CHEST,
+                EquipmentSlot::LEGS,
+                EquipmentSlot::FEET,
+            ] {
+                if let Some(stack) = equipment.equipment.get(&slot)
+                    && !stack.is_empty()
+                {
+                    for (enchantment, factor) in &factors {
+                        if let Some(factor) = factor {
+                            let level = stack.get_enchantment_level(enchantment);
+                            if level > 0 {
+                                sum += protection_points(level, *factor);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let factor = if roll {
+            protection_roll(sum, |bound| rand::rng().random_range(0..bound))
+        } else {
+            protection_mean(sum)
+        };
+        crate::entity::combat_legacy::protection_reduced(damage, factor)
     }
 
     /// Health a hit of `amount` would take off this entity, as `damage_with_context` computes it
@@ -4325,8 +4397,18 @@ impl LivingEntity {
 
         if dmg_to_health > 0.0 {
             if let Some(player) = caller.get_player() {
-                if damage_type.exhaustion > 0.0 {
-                    player.add_exhaustion(damage_type.exhaustion);
+                let exhaustion = if world.combat_mode().is_legacy() {
+                    // 1.8: 0.3 per hit, 0 for the sources that bypass armor.
+                    if damage_type.has_tag(&tag::DamageType::MINECRAFT_BYPASSES_ARMOR) {
+                        0.0
+                    } else {
+                        0.3
+                    }
+                } else {
+                    damage_type.exhaustion
+                };
+                if exhaustion > 0.0 {
+                    player.add_exhaustion(exhaustion);
                 }
                 player.increment_stat(
                     StatisticCategory::Custom,
