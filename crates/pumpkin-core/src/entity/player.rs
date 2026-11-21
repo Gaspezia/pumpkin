@@ -4660,12 +4660,13 @@ impl Player {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(&other_id);
-        if !was_hidden {
-            return;
-        }
         let world = self.world();
         if let Some(other) = world.get_player_by_uuid(other_id) {
-            world.send_tab_list_entry(self, &other);
+            // Not hidden: the tab entry is already there, but the entity may still be untracked
+            // (a spectator observer whose mode changed), so re-evaluate it anyway.
+            if was_hidden {
+                world.send_tab_list_entry(self, &other);
+            }
             if let Some(me) = world.get_player_by_id(self.entity_id())
                 && let Some(tracked) = world.entity_tracker.get_tracked_entity(other.entity_id())
             {
@@ -5913,7 +5914,24 @@ impl Player {
             },
         );
 
+        self.retrack_players();
         true
+    }
+
+    /// Re-evaluates who sees whom for this player, as vanilla does on every tracker update: a
+    /// spectator is only visible to spectators, so a mode change moves this player both as an
+    /// observer (the others it now sees or no longer sees) and as a target (who sees it).
+    fn retrack_players(self: &Arc<Self>) {
+        let world = self.world();
+        let players = world.players.load();
+        if let Some(tracked) = world.entity_tracker.get_tracked_entity(self.entity_id()) {
+            tracked.update_players(&players, &world);
+        }
+        for other in players.iter() {
+            if let Some(tracked) = world.entity_tracker.get_tracked_entity(other.entity_id()) {
+                tracked.update_player(self, &world);
+            }
+        }
     }
 
     /// Send the player's skin layers and used hand to all players.
