@@ -745,7 +745,7 @@ impl LivingEntity {
     /// attribute map and sends the changed attributes to clients. Without this
     /// the client never sees the reduced attack speed and does not show the
     /// crosshair attack indicator.
-    fn update_weapon_attributes(&self, stack: &ItemStack) {
+    pub(crate) fn update_weapon_attributes(&self, stack: &ItemStack) {
         let component = stack.get_data_component::<AttributeModifiersImpl>();
 
         // Single pass over the item's modifiers, split by attribute.

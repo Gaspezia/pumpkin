@@ -1623,6 +1623,11 @@ impl Player {
             );
         }
 
+        // The ATTACK_DAMAGE modifier follows the held item only on slot changes: a `/give` into the
+        // selected slot would otherwise hit with the previous item.
+        if !is_spin_attack {
+            self.living_entity.update_weapon_attributes(&item_stack);
+        }
         let base_damage = if is_spin_attack {
             f64::from(self.living_entity.auto_spin_attack_dmg.load())
         } else {
@@ -8030,6 +8035,12 @@ impl NBTStorage for EnderChestInventory {
 impl NBTStorageInit for EnderChestInventory {}
 
 impl EntityBase for Player {
+    /// The server-side ghost of a player falls like any living entity: knockback (1.8 and modern)
+    /// starts from the real vertical velocity, `-0.0784` at rest on the ground.
+    fn get_gravity(&self) -> f64 {
+        self.living_entity.get_attribute_value(&Attributes::GRAVITY)
+    }
+
     fn can_hit(&self) -> bool {
         !self.is_spectator() && !self.get_entity().is_removed()
     }

@@ -113,6 +113,7 @@ impl Player {
             attacker_entity.has_vehicle(),
             victim.get_living_entity().is_some(),
         );
+        self.living_entity.update_weapon_attributes(&item_stack);
         let attribute = attack_attribute(self, &item_stack);
         let damage = combat_legacy::melee_damage(attribute, critical, enchantment_damage);
         // The hit only leaves when it carries damage (a 0 attribute with no enchantment does not).
