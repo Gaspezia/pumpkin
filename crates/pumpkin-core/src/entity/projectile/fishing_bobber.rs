@@ -7,17 +7,21 @@ use crate::entity::item::ItemEntity;
 use crate::entity::projectile::{
     ProjectileHit, get_hit_result_on_move_vector, hit_target_or_deflect_self,
 };
+use crate::entity::projectile_legacy;
 use crate::world::loot::{LootContextParameters, LootTableHandle, generate_loot_from_handle};
 use crate::{
     entity::{Entity, EntityBase, living::LivingEntity, player::Player},
     server::Server,
 };
 use pumpkin_data::attributes::Attributes;
+use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::{EntityStatus, EntityType};
+use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::Taggable;
 use pumpkin_protocol::bedrock::server::ActorEventID;
+use pumpkin_protocol::java::client::play::CEntityVelocity;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::clip::ClipBlock;
 use rand::RngExt;
@@ -74,7 +78,10 @@ impl FishingBobberEntity {
                 delta
                     .multiply(0.1, 0.1, 0.1)
                     .add_raw(0.0, delta.length().sqrt() * 0.08, 0.0);
-            hooked.get_entity().add_velocity(motion);
+            // 1.8 never pulls a player: the reel changes the server motion without sending it.
+            if !(super::is_legacy(&self.entity) && hooked.get_player().is_some()) {
+                hooked.get_entity().add_velocity(motion);
+            }
             world.send_entity_status(
                 &self.entity,
                 EntityStatus::FishingRodReelIn,
@@ -157,6 +164,9 @@ impl FishingBobberEntity {
         let entity = self.get_entity();
         let world = entity.world.load();
         self.owner.tick(entity);
+        if world.combat_mode().is_legacy() && self.drop_if_angler_lost() {
+            return;
+        }
 
         if self.in_ground.load(Ordering::Relaxed) {
             return;
@@ -178,10 +188,13 @@ impl FishingBobberEntity {
             }
         }
 
+        let legacy = super::is_legacy(entity);
         let mut velocity = entity.velocity.load();
 
         if entity.touching_water.load(Ordering::Relaxed) {
-            velocity.y += 0.02; // Buoyancy
+            if !legacy {
+                velocity.y += 0.02; // Buoyancy
+            }
 
             let bite = self.bite_countdown.load(Ordering::Relaxed);
             if bite > 0 {
@@ -212,23 +225,29 @@ impl FishingBobberEntity {
                     );
                 }
             }
-        } else {
+        } else if !legacy {
             velocity.y -= Self::GRAVITY;
         }
 
-        let inertia = if entity.touching_water.load(Ordering::Relaxed) {
-            Self::WATER_INERTIA
-        } else {
-            Self::AIR_INERTIA
-        };
-        velocity = velocity.multiply(inertia, inertia, inertia);
-        entity.velocity.store(velocity);
+        // 1.8 moves first and applies gravity and drag after the move (see below).
+        if !legacy {
+            let inertia = if entity.touching_water.load(Ordering::Relaxed) {
+                Self::WATER_INERTIA
+            } else {
+                Self::AIR_INERTIA
+            };
+            velocity = velocity.multiply(inertia, inertia, inertia);
+            entity.velocity.store(velocity);
+        }
 
         // Hits are checked along the path first, then the move handles block collision.
         let hit = get_hit_result_on_move_vector(
             caller,
             |other| {
-                (other.can_be_hit_by_projectile() && self.owner.can_hit(&world, other.get_entity()))
+                (other.can_be_hit_by_projectile()
+                    && self
+                        .owner
+                        .can_hit_projectile(&world, entity, other.get_entity()))
                     || (other.get_entity().is_alive()
                         && other.get_entity().entity_type == &EntityType::ITEM)
             },
@@ -242,12 +261,58 @@ impl FishingBobberEntity {
         }
 
         entity.move_entity(caller, entity.velocity.load());
+        if legacy {
+            self.legacy_step(&world);
+            return;
+        }
         if entity.on_ground.load(Ordering::Relaxed)
             || entity.horizontal_collision.load(Ordering::Relaxed)
         {
             self.in_ground.store(true, Ordering::Relaxed);
             entity.velocity.store(Vector3::new(0.0, 0.0, 0.0));
         }
+    }
+
+    /// 1.8 gravity and drag, applied after the move, then the new speed goes to the clients.
+    fn legacy_step(&self, world: &crate::world::World) {
+        let entity = &self.entity;
+        // ponytail: immersion is all or nothing here; 1.8 samples 5 slices of the box.
+        let immersion = f64::from(u8::from(entity.touching_water.load(Ordering::Relaxed)));
+        let grounded = entity.on_ground.load(Ordering::Relaxed)
+            || entity.horizontal_collision.load(Ordering::Relaxed);
+        let (_, next) = projectile_legacy::rod_step(
+            Vector3::new(0.0, 0.0, 0.0),
+            entity.velocity.load(),
+            immersion,
+            grounded,
+        );
+        entity.velocity.store(next);
+        let packet = CEntityVelocity::new(entity.entity_id.into(), next);
+        world.broadcast_to_chunk(entity.chunk_pos.load(), &packet);
+    }
+
+    /// 1.8 drops the hook when its angler is gone, holds something else than a rod or is more
+    /// than 32 blocks away. Returns whether it did.
+    fn drop_if_angler_lost(&self) -> bool {
+        let entity = &self.entity;
+        let world = entity.world.load();
+        let Some(player) = self.owner.get_player(&world) else {
+            return false;
+        };
+        let holds_rod = player.inventory.held_item().item.id == Item::FISHING_ROD.id;
+        let lost = !player.get_entity().is_alive()
+            || !holds_rod
+            || player
+                .get_entity()
+                .pos
+                .load()
+                .squared_distance_to_vec(&entity.pos.load())
+                > 1024.0;
+        if lost {
+            player.fishing_bobber.store(-1, Ordering::Relaxed);
+            entity.remove();
+        }
+        lost
     }
 
     fn set_hooked_entity(&self, hooked: &Entity) {
@@ -299,7 +364,28 @@ impl EntityBase for FishingBobberEntity {
     fn on_hit(&self, hit: ProjectileHit) {
         self.has_hit.store(true, Ordering::Relaxed);
         match hit {
-            ProjectileHit::Entity { entity, .. } => self.set_hooked_entity(entity.get_entity()),
+            ProjectileHit::Entity {
+                entity, hit_pos, ..
+            } => {
+                // 1.8 hooks through a hit of 0 damage: flash, base knockback, invulnerability
+                // (the rod combo). A hit that is refused does not hook.
+                if super::is_legacy(&self.entity)
+                    && entity.get_entity().entity_type != &EntityType::ITEM
+                {
+                    let owner = self.owner.get(&self.entity.world.load());
+                    if !entity.damage_with_context(
+                        entity.as_ref(),
+                        0.0,
+                        DamageType::THROWN,
+                        Some(hit_pos),
+                        Some(self),
+                        owner.as_deref(),
+                    ) {
+                        return;
+                    }
+                }
+                self.set_hooked_entity(entity.get_entity());
+            }
             ProjectileHit::Block { hit_pos, .. } => {
                 let entity = &self.entity;
                 let distance = (hit_pos - entity.pos.load()).length();
