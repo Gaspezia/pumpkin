@@ -563,7 +563,8 @@ impl<'a> Explosion<'a> {
             let exposure = if !should_damage && knockback_multiplier == 0.0 {
                 0.0
             } else {
-                Self::calculate_exposure(&self.pos, entity, world) as f64
+                Self::calculate_exposure(&self.pos, entity, world, world.combat_mode().is_legacy())
+                    as f64
             };
 
             let legacy = world.combat_mode().is_legacy();
@@ -710,8 +711,13 @@ impl<'a> Explosion<'a> {
         explosion_pos: &Vector3<f64>,
         entity: &Entity,
         world: &Arc<World>,
+        legacy: bool,
     ) -> f32 {
         let bbox = entity.bounding_box.load();
+        // The modern ray walk starts 1e-7 behind its origin, so a sample on the top face of the
+        // floor an entity stands on starts inside the floor and is blocked: the whole feet row
+        // is lost (a fifth of the exposure). 1.8 has no such step, so lift the samples a hair.
+        let lift = if legacy { 1.0e-6 } else { 0.0 };
 
         let step_x = 1.0 / ((bbox.max.x - bbox.min.x) * 2.0 + 1.0);
         let step_y = 1.0 / ((bbox.max.y - bbox.min.y) * 2.0 + 1.0);
@@ -737,7 +743,7 @@ impl<'a> Explosion<'a> {
                     let o = bbox.min.y + (bbox.max.y - bbox.min.y) * l;
                     let p = bbox.min.z + (bbox.max.z - bbox.min.z) * m;
 
-                    let vec3d = Vector3::new(n + offset_x, o, p + offset_z);
+                    let vec3d = Vector3::new(n + offset_x, o + lift, p + offset_z);
 
                     if world
                         .clip(&pumpkin_world::clip::ClipContext::new(
