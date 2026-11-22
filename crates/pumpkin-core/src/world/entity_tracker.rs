@@ -95,6 +95,18 @@ pub struct TrackedEntity {
     bedrock_rot: AtomicCell<[u8; 3]>,
 }
 
+/// Vanilla `Entity.getYHeadRot()`: 0 unless the entity is a `LivingEntity`.
+fn tracked_head_yaw(entity: &dyn EntityBase) -> f32 {
+    head_yaw_for(
+        entity.get_living_entity().is_some(),
+        entity.get_entity().head_yaw.load(),
+    )
+}
+
+const fn head_yaw_for(is_living: bool, head_yaw: f32) -> f32 {
+    if is_living { head_yaw } else { 0.0 }
+}
+
 impl TrackedEntity {
     #[must_use]
     pub fn new(
@@ -111,7 +123,7 @@ impl TrackedEntity {
         let rot = [
             pack_degrees(base.pitch.load()),
             pack_degrees(base.yaw.load()),
-            pack_degrees(base.head_yaw.load()),
+            pack_degrees(tracked_head_yaw(entity.as_ref())),
         ];
         // Vanilla `ServerEntity` ctor: sync state starts at the current values.
         base.last_sent_pos.store(pos);
@@ -217,7 +229,9 @@ impl TrackedEntity {
 
         // Java `CHeadRot` is per-tick. Bedrock watchers of this entity get head yaw from
         // `send_bedrock_move` (`MoveActorDelta` HAS_HEAD_YAW), not from this packet.
-        let head_yaw = pack_degrees(entity.head_yaw.load());
+        // Vanilla `Entity.getYHeadRot()` is 0 for non-living entities (only `LivingEntity`
+        // has `yHeadRot`), so their byte never changes and no packet is sent.
+        let head_yaw = pack_degrees(tracked_head_yaw(self.entity.as_ref()));
         if head_yaw != entity.last_sent_head_yaw.load(Relaxed) {
             self.send_to_tracking_players(&CHeadRot::new(VarInt(self.entity_id), head_yaw), world);
             entity.last_sent_head_yaw.store(head_yaw, Relaxed);
@@ -1399,6 +1413,30 @@ mod visibility_tests {
             for target in [GameMode::Survival, GameMode::Spectator] {
                 assert!(!player_visible_to(observer, target, true));
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `Some(byte)` when vanilla `ServerEntity.sendChanges` would send `CHeadRot`.
+    fn head_packet(is_living: bool, head_yaw: f32, last: u8) -> Option<u8> {
+        let b = pack_degrees(head_yaw_for(is_living, head_yaw));
+        (b != last).then_some(b)
+    }
+
+    #[test]
+    fn living_head_follows_even_when_body_is_still() {
+        assert_eq!(head_packet(true, 90.0, 0), Some(pack_degrees(90.0)));
+        assert_eq!(head_packet(true, 90.0, pack_degrees(90.0)), None);
+    }
+
+    #[test]
+    fn non_living_never_sends_head_rotation() {
+        for yaw in [0.0, 33.0, 90.0, -170.0] {
+            assert_eq!(head_packet(false, yaw, 0), None);
         }
     }
 }
