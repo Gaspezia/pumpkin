@@ -18,11 +18,17 @@ use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// `[pvp] combat = "legacy_1_8"`: swords go out with the components that give a 26.x client the
-/// 1.8 blocking pose and reach. Set once at server start.
+/// 1.8 blocking pose and reach. Set at server start, then by `/combat`.
 static LEGACY_SWORD_COMPONENTS: AtomicBool = AtomicBool::new(false);
 
 pub fn set_legacy_sword_components(enabled: bool) {
     LEGACY_SWORD_COMPONENTS.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether swords currently go out with the 1.8 components.
+#[must_use]
+pub fn legacy_sword_components() -> bool {
+    LEGACY_SWORD_COMPONENTS.load(Ordering::Relaxed)
 }
 
 /// The stack as the client must see it. A sword without its own `consumable` / `attack_range`
