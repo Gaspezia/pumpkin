@@ -4,6 +4,7 @@ use pumpkin_protocol::java::client::play::{
 };
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::vector3::Vector3;
+use std::time::Instant;
 
 use crate::entity::Entity;
 use crate::net::java::JavaClient;
@@ -21,6 +22,8 @@ pub struct Worldborder {
     pub warning_time: i32,
     pub damage_per_block: f32,
     pub buffer: f32,
+    /// Debut de la transition de taille en cours (`speed` millisecondes) ; `None` hors transition.
+    lerp_start: Option<Instant>,
 }
 
 impl Worldborder {
@@ -45,7 +48,35 @@ impl Worldborder {
             // Vanilla defaults (`WorldBorder.DEFAULT_DAMAGE_PER_BLOCK` and `DEFAULT_SAFE_ZONE`).
             damage_per_block: 0.2,
             buffer: 5.0,
+            lerp_start: None,
         }
+    }
+
+    /// Diametre a `elapsed_ms` apres le debut de la transition (vanilla `MovingBorderExtent.getSize`).
+    #[must_use]
+    pub fn diameter_at(&self, elapsed_ms: u64) -> f64 {
+        if self.speed <= 0 {
+            return self.new_diameter;
+        }
+        let t = (elapsed_ms as f64 / self.speed as f64).min(1.0);
+        self.old_diameter + (self.new_diameter - self.old_diameter) * t
+    }
+
+    /// Diametre courant : la bordure se reduit cote serveur au rythme que le client dessine.
+    #[must_use]
+    pub fn diameter(&self) -> f64 {
+        match self.lerp_start {
+            Some(start) => self.diameter_at(start.elapsed().as_millis() as u64),
+            None => self.new_diameter,
+        }
+    }
+
+    /// Millisecondes restantes de la transition (`getLerpRemainingTime`), 0 hors transition.
+    #[must_use]
+    pub fn lerp_remaining_ms(&self) -> i64 {
+        self.lerp_start.map_or(0, |start| {
+            (self.speed - start.elapsed().as_millis() as i64).max(0)
+        })
     }
 
     /// Damage a player standing at (`x`, `z`) takes this tick, as vanilla
@@ -64,9 +95,9 @@ impl Worldborder {
         if let Ok(data) = client.serialize_packet(&CInitializeWorldBorder::new(
             self.center_x,
             self.center_z,
-            self.old_diameter,
+            self.diameter(),
             self.new_diameter,
-            self.speed.into(),
+            self.lerp_remaining_ms().into(),
             self.portal_teleport_boundary.into(),
             self.warning_blocks.into(),
             self.warning_time.into(),
@@ -83,8 +114,16 @@ impl Worldborder {
     }
 
     pub fn set_diameter(&mut self, world: &World, diameter: f64, speed: Option<i64>) {
-        self.old_diameter = self.new_diameter;
+        // Vanilla `lerpSizeBetween(getSize(), ...)` : on part de la taille courante, pas de la cible precedente.
+        let current = self.diameter();
         self.new_diameter = diameter;
+        self.speed = speed.unwrap_or(0);
+        self.lerp_start = speed.filter(|s| *s > 0).map(|_| Instant::now());
+        self.old_diameter = if self.lerp_start.is_some() {
+            current
+        } else {
+            diameter
+        };
 
         match speed {
             Some(speed) => {
@@ -130,6 +169,7 @@ impl Worldborder {
         self.old_diameter = 29_999_984.0;
         self.new_diameter = 29_999_984.0;
         self.speed = 0;
+        self.lerp_start = None;
         self.portal_teleport_boundary = 29_999_984;
         self.warning_blocks = 5;
         self.warning_time = 15;
@@ -150,7 +190,7 @@ impl Worldborder {
 
     #[must_use]
     pub fn get_distance_to_border(&self, x: f64, z: f64) -> f64 {
-        let half = self.new_diameter / 2.0;
+        let half = self.diameter() / 2.0;
         let from_west = x - (self.center_x - half);
         let from_east = self.center_x + half - x;
         let from_north = z - (self.center_z - half);
@@ -161,7 +201,7 @@ impl Worldborder {
     /// Pulls `x` and `z` just inside the border.
     #[must_use]
     pub fn clamp_to_bounds(&self, position: Vector3<f64>) -> Vector3<f64> {
-        let half = self.new_diameter / 2.0;
+        let half = self.diameter() / 2.0;
         let inset = f64::from(1.0e-5f32);
         Vector3::new(
             position
@@ -176,7 +216,7 @@ impl Worldborder {
 
     #[must_use]
     pub fn is_within_bounds(&self, x: f64, z: f64, margin: f64) -> bool {
-        let half = self.new_diameter / 2.0;
+        let half = self.diameter() / 2.0;
         x >= self.center_x - half - margin
             && x < self.center_x + half + margin
             && z >= self.center_z - half - margin
@@ -196,7 +236,7 @@ impl Worldborder {
 
     #[must_use]
     pub fn collision_shape_contains(&self, bounding_box: &BoundingBox) -> bool {
-        let half = self.new_diameter / 2.0;
+        let half = self.diameter() / 2.0;
         let min_x = (self.center_x - half).floor();
         let max_x = (self.center_x + half).ceil();
         let min_z = (self.center_z - half).floor();
@@ -220,7 +260,7 @@ impl Worldborder {
 
     #[must_use]
     pub fn clamp_block(&self, x: i32, z: i32) -> (i32, i32) {
-        let half = self.new_diameter / 2.0;
+        let half = self.diameter() / 2.0;
         // A border narrower than one block spans no block boundary, leaving `max`
         // below `min`. `Ord::clamp` panics on an inverted range, so collapse the
         // range onto the single block that holds the centre instead.
@@ -236,7 +276,7 @@ impl Worldborder {
     pub fn clamp_to_bound(&self, x: f64, z: f64) -> (f64, f64) {
         // Unlike `f64::clamp`, an inverted range does not panic.
         let clamp = |value: f64, min: f64, max: f64| if value < min { min } else { value.min(max) };
-        let half = self.new_diameter / 2.0;
+        let half = self.diameter() / 2.0;
         let margin = f64::from(1.0E-5f32);
         (
             clamp(x, self.center_x - half, self.center_x + half - margin),
@@ -301,6 +341,21 @@ mod tests {
         let mut off = centered_border(10.0);
         off.damage_per_block = 0.0;
         assert_eq!(off.outside_damage(500.0, 0.0), None);
+    }
+
+    #[test]
+    fn the_diameter_follows_the_lerp_instead_of_jumping_to_the_target() {
+        let mut border = centered_border(250.0);
+        border.old_diameter = 250.0;
+        border.new_diameter = 100.0;
+        border.speed = 30_000;
+        assert_eq!(border.diameter_at(0), 250.0);
+        assert_eq!(border.diameter_at(15_000), 175.0);
+        assert_eq!(border.diameter_at(30_000), 100.0);
+        assert_eq!(border.diameter_at(90_000), 100.0);
+        // Sans transition (`speed` 0), la cible est immediate.
+        border.speed = 0;
+        assert_eq!(border.diameter_at(5), 100.0);
     }
 
     #[test]

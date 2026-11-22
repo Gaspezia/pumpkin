@@ -34,6 +34,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 44 | Combat PvP 1.8, L9 : rangee des pieds gardee dans l'exposition d'explosion | branche `gaspezia-patch/pvp18-exposure-floor` | aucune (propre au fork) | PR Gaspezia/pumpkin #46 | 2026-11-21 |
 | 45 | `player.spawn-particles-data` : particules a donnees (dust, block, entity-effect...) envoyees a un seul joueur | branche `gaspezia-patch/player-particle-data` | aucune (proposable) | PR Gaspezia/pumpkin (lot 6 du 2026-11-22) | 2026-11-22 |
 | 46 | `CHeadRot` (`entity_head_rotation`) envoye seulement pour les entites vivantes, a l'identique de vanilla (`Entity.getYHeadRot()` vaut 0 hors `LivingEntity`, octet inchange donc aucun paquet) ; un display ou toute entite non vivante n'en emet plus, joueurs, PNJ et mobs inchanges | branche `gaspezia-patch/head-rotation-living-only` | aucune (proposable) | PR Gaspezia/pumpkin | 2026-11-22 |
+| 49 | La bordure du monde se reduit aussi cote serveur : `Worldborder::diameter()` interpole entre l'ancienne taille et la cible sur la duree de `set-size-transition` (vanilla `MovingBorderExtent.getSize`) ; degats, `contains`, `clamp`, distance a la bordure l'utilisent ; `init-client` envoie la taille courante et le temps restant | branche `gaspezia-patch/border-lerp-server` | aucune (proposable) | PR Gaspezia/pumpkin (numero a recaler au merge groupe) | 2026-11-22 |
 | 37 | Combat PvP 1.8, lot 3 (L7, canne a peche) : lancer 1,5, gravite 0,04 puis trainee 0,92/0,5, accroche par un coup a 0 degat (recul et invulnerabilite), jamais de traction d'un joueur, flotteur retire si la canne n'est plus tenue | branche `gaspezia-patch/pvp18-rod` | aucune (propre au fork) | PR Gaspezia/pumpkin #39 | 2026-11-21 |
 | 36 | Combat PvP 1.8, lot 3 (L6, projectiles) : depart a l'oeil avec decalage lateral 0,16, imprecision gaussienne 0,0075, ordre deplacement-trainee-gravite des objets lances, fleche dans l'eau, marge de collision 0,3, tireur touchable apres 5 ticks, Frappe sans resistance, potion jetable | branche `gaspezia-patch/pvp18-projectiles` | aucune (propre au fork) | PR Gaspezia/pumpkin #38 | 2026-11-21 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
@@ -387,6 +388,14 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Pourquoi : `world.spawn-particle-data` diffuse a tout le monde sans limite de distance ; le moteur de modeles emet par joueur pour respecter la portee de 32 blocs et les reglages Toutes / Reduites / Aucune. Additif.
 - Fichiers : `crates/pumpkin-plugin-wit/v0.2/player.wit`, `crates/pumpkin-wasm-host-v0_2/src/player.rs`, `world.rs` (`encode_particle_data` en `pub(crate)`), `crates/pumpkin-core/src/entity/player.rs`.
 - Proposable upstream : oui.
+
+### Patch 49 : la bordure se reduit cote serveur
+
+- Quoi : `Worldborder` garde l'instant de depart de la transition (`lerp_start`) et calcule `diameter()` = interpolation lineaire de `old_diameter` vers `new_diameter` sur `speed` ms. Distance a la bordure, `contains`, `clamp_*`, `collision_shape_contains` et donc les degats `outside_border` (patch 19) utilisent ce diametre courant. `set_diameter` part de la taille COURANTE (vanilla `lerpSizeBetween(getSize(), ...)`) et non de la cible precedente. `init_client` (arrivee d'un joueur) envoie `diameter()` en ancienne taille et le temps RESTANT (vanilla `getLerpRemainingTime`) au lieu de la duree complete.
+- Pourquoi : avant, le serveur appliquait la taille cible d'un coup alors que le client dessinait la reduction sur 30 s : le joueur entre la cible et la bordure visible prenait des degats sans voir la bordure l'atteindre (Arena-rs, retour de Bastien). Les paquets `set_border_lerp_size` partaient deja correctement.
+- Fichiers : `crates/pumpkin-core/src/world/border.rs` (`diameter`, `diameter_at`, `lerp_remaining_ms`, test `the_diameter_follows_the_lerp_instead_of_jumping_to_the_target`).
+- Limites : `new_diameter` reste la cible pour `/worldborder get`, `get-target-diameter` et les orbes d'experience (inchange). Pas de tick : le diametre est recalcule a la demande. La duree d'avertissement par defaut (300 au lieu de 15 s vanilla) n'est pas touchee.
+- Proposable upstream : oui (fidelite vanilla).
 
 ## CI du fork
 
