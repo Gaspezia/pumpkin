@@ -2920,6 +2920,29 @@ impl Player {
         self.try_send_client_packet(&packet);
     }
 
+    /// Spawns a particle with its already-encoded option bytes, visible only to this player.
+    pub fn spawn_particles_with_data(
+        &self,
+        particle: Particle,
+        pos: Vector3<f64>,
+        count: u32,
+        offset: Vector3<f32>,
+        max_speed: f32,
+        data: &[u8],
+    ) {
+        let packet = CParticle::new(
+            false,
+            false,
+            pos,
+            offset,
+            max_speed,
+            count as i32,
+            (particle.to_id() as i32).into(),
+            data,
+        );
+        self.try_send_client_packet(&packet);
+    }
+
     pub fn send_block_change(&self, location: BlockPos, state_id: u16) {
         let je_packet = CBlockUpdate::new(location, (state_id as i32).into());
         let be_packet = pumpkin_protocol::bedrock::client::update_block::CUpdateBlock::new(

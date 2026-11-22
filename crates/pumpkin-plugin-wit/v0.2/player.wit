@@ -18,7 +18,7 @@ interface player {
     use statistics.{statistic-category, custom-statistic};
     use inventory.{inventory, player-inventory};
     use sounds.{sound, sound-category};
-    use particles.{particle};
+    use particles.{particle, particle-data};
     use entity-statuses.{entity-status};
 
     /// Represents per-player weather condition overrides.
@@ -960,6 +960,9 @@ interface player {
 
         /// Spawns particles visible only to this player.
         spawn-particles: func(particle: particle, pos: position, count: u32, offset: position, max-speed: f32);
+
+        /// Spawns a particle that carries data (dust colour, block state...) visible only to this player.
+        spawn-particles-data: func(data: particle-data, pos: position, count: u32, offset: position, max-speed: f32) -> result<_, string>;
 
         // Visuals & Client Overrides
 

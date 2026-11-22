@@ -1563,6 +1563,35 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         Ok(())
     }
 
+    fn spawn_particles_data(
+        &mut self,
+        player: Resource<Player>,
+        data: pumpkin::plugin::particles::ParticleData,
+        pos: pumpkin::plugin::common::Position,
+        count: u32,
+        offset: pumpkin::plugin::common::Position,
+        max_speed: f32,
+    ) -> wasmtime::Result<Result<(), String>> {
+        let player = self.get(&player)?;
+        let (particle, payload) = match crate::world::encode_particle_data(&data) {
+            Ok(encoded) => encoded,
+            Err(error) => return Ok(Err(error)),
+        };
+        player.spawn_particles_with_data(
+            particle,
+            pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
+            count,
+            pumpkin_util::math::vector3::Vector3::new(
+                offset.0 as f32,
+                offset.1 as f32,
+                offset.2 as f32,
+            ),
+            max_speed,
+            &payload,
+        );
+        Ok(Ok(()))
+    }
+
     fn send_block_change(
         &mut self,
         player: Resource<Player>,

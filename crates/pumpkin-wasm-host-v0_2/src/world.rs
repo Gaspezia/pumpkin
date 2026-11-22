@@ -3054,7 +3054,7 @@ fn build_fireworks(
 
 /// Wire payload of a particle that carries data: the particle and its option bytes
 /// (1.21.x `ParticleOptions` encoding).
-fn encode_particle_data(
+pub(crate) fn encode_particle_data(
     data: &pumpkin::plugin::particles::ParticleData,
 ) -> Result<(pumpkin_data::particle::Particle, Vec<u8>), String> {
     use pumpkin::plugin::particles::{Particle as Wit, ParticleData};
