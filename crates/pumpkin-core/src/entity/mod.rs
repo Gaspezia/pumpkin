@@ -1969,9 +1969,19 @@ impl Entity {
         self.set_velocity(self.velocity.load() + velocity);
     }
 
+    /// Vanilla/Paper `setDeltaMovement` + `hurtMarked`: the packet goes out at once and
+    /// `last_sent_velocity` (vanilla `lastSentMovement`) is NOT touched, so the tracker's
+    /// interval check keeps comparing against the last interval send. A caller that sets the
+    /// velocity every tick therefore gets one packet per tick, not an extra decayed one.
     pub fn set_velocity(&self, velocity: Vector3<f64>) {
         self.velocity.store(velocity);
-        self.send_velocity();
+        if self.entity_type == &EntityType::PLAYER
+            && let Some(player) = self.world.load().get_player_by_id(self.entity_id)
+        {
+            player.send_hurt_velocity();
+            return;
+        }
+        self.broadcast_velocity();
     }
 
     /// Updates the world reference for this entity.
@@ -2280,8 +2290,13 @@ impl Entity {
 
     /// watchers only: Own client predicts its pushes.
     pub fn send_velocity_to_watchers(&self) {
+        self.last_sent_velocity.store(self.velocity.load());
+        self.broadcast_velocity();
+    }
+
+    /// Sends the current velocity to watchers without touching `last_sent_velocity`.
+    fn broadcast_velocity(&self) {
         let velocity = self.velocity.load();
-        self.last_sent_velocity.store(velocity);
         self.world.load().send_to_tracking_players_editioned(
             self,
             &CEntityVelocity::new(self.entity_id.into(), velocity),
@@ -6513,19 +6528,38 @@ mod dimension_tests {
         (a - b).abs() < 1e-6
     }
 
-    /// `set_velocity` (what the plugin host calls) broadcasts to watchers; a bare store does not.
+    /// `set_velocity` broadcasts at once but leaves `last_sent_velocity` (vanilla
+    /// `lastSentMovement`) alone: a plugin re-setting the velocity every tick must not make the
+    /// interval check resend the decayed value (Paper sends one packet per tick, no more).
     #[tokio::test]
-    async fn set_velocity_is_sent_to_watchers() -> TestResult {
+    async fn set_velocity_keeps_last_sent_for_the_interval_check() -> TestResult {
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
         let entity = Entity::new(world, Vector3::new(0.0, 64.0, 0.0), &EntityType::SHEEP);
-        let v = Vector3::new(1.0, 2.0, 3.0);
+        let set = Vector3::new(0.18, -0.0784, 0.0);
+        let decayed = Vector3::new(0.0983, -0.0784, 0.0);
 
-        entity.velocity.store(v);
-        assert_ne!(entity.last_sent_velocity.load(), v);
+        // One-off set: no stale-free state is assumed, the interval check still runs
+        // against the previous interval send, as in vanilla.
+        entity.set_velocity(set);
+        assert_ne!(entity.last_sent_velocity.load(), set);
+        entity.velocity.store(decayed); // physics ran
+        assert!(entity.velocity_changed_since_sent());
 
-        entity.set_velocity(v);
-        assert_eq!(entity.last_sent_velocity.load(), v);
+        // The first interval send records the decayed value ...
+        entity.last_sent_velocity.store(decayed);
+        // ... then every tick: plugin sets, physics decays, interval compares. No resend.
+        for _ in 0..6 {
+            entity.set_velocity(set);
+            assert_eq!(entity.last_sent_velocity.load(), decayed);
+            entity.velocity.store(decayed);
+            assert!(!entity.velocity_changed_since_sent());
+        }
+
+        // Paths that own the send (vehicles, tracker) still record it.
+        entity.velocity.store(set);
+        entity.send_velocity_to_watchers();
+        assert_eq!(entity.last_sent_velocity.load(), set);
         Ok(())
     }
 
