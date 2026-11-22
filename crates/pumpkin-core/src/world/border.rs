@@ -65,10 +65,9 @@ impl Worldborder {
     /// Diametre courant : la bordure se reduit cote serveur au rythme que le client dessine.
     #[must_use]
     pub fn diameter(&self) -> f64 {
-        match self.lerp_start {
-            Some(start) => self.diameter_at(start.elapsed().as_millis() as u64),
-            None => self.new_diameter,
-        }
+        self.lerp_start.map_or(self.new_diameter, |start| {
+            self.diameter_at(start.elapsed().as_millis() as u64)
+        })
     }
 
     /// Millisecondes restantes de la transition (`getLerpRemainingTime`), 0 hors transition.
