@@ -386,6 +386,8 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Pourquoi : un plugin qui appelle `remove` sur une entite portant des passagers et qui a un handler `entity-dismount` bloquant se bloquait : l'hote attendait le handler du meme store, occupe par l'appel hote. Paper rend l'evenement non annulable quand le vehicule est retire (`isCancellable() == false`).
 - Fichiers : `crates/pumpkin-core/src/entity/mod.rs`, `crates/pumpkin-core/src/world/mod.rs`.
 - Test : aucun test unitaire (un `Server` ne se construit pas hors serveur) ; preuve au banc avec un plugin qui retire une porteuse avec passagers et un handler de descente bloquant.
+- Proposable upstream : oui.
+
 ### Patch 45 : `player.spawn-particles-data`
 
 - Quoi : `player.wit` gagne `spawn-particles-data(data, pos, count, offset, max-speed) -> result<_, string>`, sur le modele de `spawn-particles`. L'hote reutilise `encode_particle_data` du patch 31 ; `Player::spawn_particles_with_data` envoie le paquet `CParticle` au seul joueur.
