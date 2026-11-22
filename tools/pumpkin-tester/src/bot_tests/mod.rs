@@ -8,6 +8,7 @@ mod polar_bear;
 mod sheep_shearing;
 mod sign_authorization;
 mod status_ping;
+mod tracker_order;
 mod world_interaction;
 
 use std::{net::SocketAddr, sync::Arc};
@@ -41,6 +42,8 @@ pub async fn run_bot_tests(
     sheep_shearing::run_sheep_shearing_test(server, summary_lines)?;
 
     polar_bear::run_polar_bear_defense_test(server, &bot1, summary_lines)?;
+
+    tracker_order::run_tracker_before_entity_tick_test(server, &mut bot1, summary_lines).await?;
 
     block_tuning_and_invert::run_block_tuning_and_invert_tests(server, &mut bot1, summary_lines)
         .await?;

@@ -1728,6 +1728,16 @@ impl World {
         }
         let player_elapsed = t_players.elapsed();
 
+        // Vanilla/Paper order: a velocity cause (plugin task at the head of the tick, packets
+        // handled between ticks by `managedBlock`/`ensureRunningOnSameThread`, pushes) comes
+        // first, then `ChunkMap.tick` -> `ServerEntity.sendChanges` (ServerLevel.java:364),
+        // then the entity tick list (:385). Watchers get the value as set, not the one friction
+        // decays this tick, and a hit is sent in the tick that handled it.
+        for player in players.iter() {
+            player.send_velocity_changes();
+        }
+        self.entity_tracker.update_all(self);
+
         let entities_to_tick = self.entities.load();
         let entity_count = entities_to_tick.len();
         let active_chunks = self
@@ -1856,12 +1866,6 @@ impl World {
         });
         self.order_tick_spawns();
         let entity_elapsed = t_entities.elapsed();
-
-        // Like vanilla `sendChanges`: before the next tick's packets
-        for player in players.iter() {
-            player.send_velocity_changes();
-        }
-        self.entity_tracker.update_all(self);
 
         let mut block_entities: Vec<Arc<dyn BlockEntity>> = Vec::new();
         if self.block_entities.len() < active_chunks.len() {
