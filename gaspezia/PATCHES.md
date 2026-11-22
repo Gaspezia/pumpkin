@@ -407,6 +407,14 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : `new_diameter` reste la cible pour `/worldborder get`, `get-target-diameter` et les orbes d'experience (inchange). Pas de tick : le diametre est recalcule a la demande. La duree d'avertissement par defaut (300 au lieu de 15 s vanilla) n'est pas touchee.
 - Proposable upstream : oui (fidelite vanilla).
 
+### Patch 53 : degats d'explosion vanilla (`7 * f`, `f = 2 * puissance`)
+
+- Numero a recaler au merge groupe (50 a 52 sont pris par d'autres PR en cours).
+- Quoi : `get_entity_damage_amount` multipliait par `7 * puissance` au lieu de `7 * f` avec `f = 2 * puissance` (vanilla `ExplosionDamageCalculator.getEntityDamageAmount`). Les degats du combat moderne etaient divises par ~2. Formule extraite dans `vanilla_damage_amount` (pure, testee).
+- Chemin 1.8 : `combat_legacy::explosion_damage` utilise deja `8 * radius` avec `radius = 2 * puissance` : pas touche.
+- Fichiers : `crates/pumpkin-core/src/world/explosion.rs` (test `damage_amount_matches_vanilla_for_tnt_fireball_and_sheep`).
+- Proposable upstream : oui (fidelite vanilla).
+
 ## CI du fork
 
 - `rust.yml`, job `Run lints` : le runner hebergé tuait le job (exit 143, aucun pas en échec, vers 1 min 30) pendant clippy sur `pumpkin-core` (mémoire). Le job ajoute 8 Go de swap et limite `CARGO_BUILD_JOBS=2`. Diagnostic : SIGTERM sans message d'erreur, toujours au même endroit, reproductible sur run neuf.
