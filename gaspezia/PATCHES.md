@@ -146,6 +146,7 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-wasm-host-v0_2/src/entity.rs` ; test `set_velocity_is_sent_to_watchers` dans `crates/pumpkin-core/src/entity/mod.rs`.
 - Limites : un envoi par appel (pas de regroupement par tick).
 - Proposable upstream : oui.
+- Suite (`gaspezia-patch/velocity-broadcast-parity`) : `Entity::set_velocity` n'ecrase plus `last_sent_velocity` (vanilla `lastSentMovement` : `hurtMarked` n'y touche pas, seul le bloc a intervalle de `ServerEntity.sendChanges` l'ecrit). Avant, un mode qui posait la vitesse a chaque tick recevait, tous les 3 ticks, un 2e paquet avec la vitesse apres frottement (0,18 puis 0,0983). Le diffuseur `send_velocity_to_watchers` (vehicules, minecarts, tracker) garde l'ecriture. Test : `set_velocity_keeps_last_sent_for_the_interval_check`.
 
 
 ### Patch 13 : feu d'explosion
