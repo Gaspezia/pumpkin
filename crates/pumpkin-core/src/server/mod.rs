@@ -147,6 +147,9 @@ pub struct Server {
     pub server_guid: u64,
     /// Player idle timeout in minutes (0 = disabled)
     pub player_idle_timeout: AtomicI32,
+    /// Combat ruleset, from `[pvp] combat` at start and switchable with `/combat`. Read it
+    /// through [`Server::combat_mode`] (never `advanced_config.pvp.combat`).
+    combat_mode: crate::entity::combat_legacy::CombatModeCell,
     /// Manages scheduled tasks (e.g. from plugins)
     /// Manages scheduled datapack functions (`/schedule`)
     pub scheduled_functions: Arc<crate::server::scheduler::ScheduledFunctionQueue>,
@@ -191,9 +194,9 @@ impl Server {
             advanced_config.commands.broadcast_console_to_ops,
         );
 
-        pumpkin_protocol::codec::item_stack_seralizer::set_legacy_sword_components(
-            advanced_config.pvp.combat.is_legacy(),
-        );
+        let combat_mode =
+            crate::entity::combat_legacy::CombatModeCell::new(advanced_config.pvp.combat);
+        combat_mode.set(advanced_config.pvp.combat);
 
         let world_path = basic_config.get_world_path();
 
@@ -375,6 +378,7 @@ impl Server {
             scheduled_functions: Arc::new(crate::server::scheduler::ScheduledFunctionQueue::new()),
             server_guid: rand::random(),
             player_idle_timeout: AtomicI32::new(0),
+            combat_mode,
             mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
             world_info_writer: Arc::new(AnvilLevelInfo),
             level_info,
@@ -924,6 +928,21 @@ impl Server {
                     .unwrap_or_else(std::sync::PoisonError::into_inner) = footer.clone();
             }
             world.broadcast_packet_all(&packet);
+        }
+    }
+
+    /// Current combat ruleset.
+    #[must_use]
+    pub fn combat_mode(&self) -> pumpkin_config::CombatMode {
+        self.combat_mode.get()
+    }
+
+    /// Switches the combat ruleset live: the mode, the sword components on the wire, then every
+    /// online player (attributes and inventory). Not persisted.
+    pub fn set_combat_mode(&self, mode: pumpkin_config::CombatMode) {
+        self.combat_mode.set(mode);
+        for player in self.get_all_players() {
+            player.apply_combat_mode(mode);
         }
     }
 

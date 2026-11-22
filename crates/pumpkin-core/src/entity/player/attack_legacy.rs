@@ -15,6 +15,7 @@ use pumpkin_data::data_component_impl::{AttributeModifiersImpl, EnchantmentsImpl
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
+use pumpkin_inventory::screen_handler::ScreenHandler as _;
 use pumpkin_protocol::codec::var_ulong::VarULong;
 use pumpkin_protocol::java::client::play::{Animation, CEntityAnimation};
 
@@ -233,15 +234,43 @@ impl Player {
         ));
     }
 
-    /// Pushes the base attack speed to its maximum so the client cooldown stays full and its
-    /// attack indicator disappears (the server ignores the cooldown in this mode anyway).
-    pub(super) fn hide_attack_gauge(&self) {
-        let max = Attributes::ATTACK_SPEED.max_value;
+    /// Everything the combat mode changes on a player, shared by the live switch (`/combat`):
+    /// the attack-speed attribute, then the inventory resent in full so the client re-reads
+    /// the sword components.
+    pub fn apply_combat_mode(&self, mode: pumpkin_config::CombatMode) {
+        self.sync_combat_attributes(mode);
+        self.player_screen_handler
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .sync_state();
+        let current = self
+            .current_screen_handler
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if Arc::as_ptr(&current).cast::<()>() != Arc::as_ptr(&self.player_screen_handler).cast::<()>()
+        {
+            current
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .sync_state();
+        }
+    }
+
+    /// Legacy: pushes the base attack speed to its maximum so the client cooldown stays full and
+    /// its attack indicator disappears (the server ignores the cooldown in this mode anyway).
+    /// Modern: gives the vanilla base back.
+    pub(super) fn sync_combat_attributes(&self, mode: pumpkin_config::CombatMode) {
+        let target = if mode.is_legacy() {
+            Attributes::ATTACK_SPEED.max_value
+        } else {
+            Attributes::ATTACK_SPEED.default_value
+        };
         let living = &self.living_entity;
-        if (living.get_attribute_base(&Attributes::ATTACK_SPEED) - max).abs() < f64::EPSILON {
+        if (living.get_attribute_base(&Attributes::ATTACK_SPEED) - target).abs() < f64::EPSILON {
             return;
         }
-        living.set_attribute_base(&Attributes::ATTACK_SPEED, max);
+        living.set_attribute_base(&Attributes::ATTACK_SPEED, target);
         crate::entity::attributes::send_attribute_updates_for_living(
             living,
             vec![Attributes::ATTACK_SPEED],

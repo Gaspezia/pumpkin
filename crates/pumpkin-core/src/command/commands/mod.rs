@@ -69,6 +69,7 @@ mod schedule;
 mod scoreboard;
 mod seed;
 mod setblock;
+mod combat;
 mod setidletimeout;
 mod setworldspawn;
 mod spawnpoint;
@@ -132,6 +133,7 @@ pub fn default_dispatcher(
     saveall::register(&mut dispatcher, registry);
     saveoff::register(&mut dispatcher, registry);
     saveon::register(&mut dispatcher, registry);
+    combat::register(&mut dispatcher, registry);
     setidletimeout::register(&mut dispatcher, registry);
     spreadplayers::register(&mut dispatcher, registry);
     stop::register(&mut dispatcher, registry);

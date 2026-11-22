@@ -320,7 +320,7 @@ impl World {
         self.server
             .upgrade()
             .map_or(pumpkin_config::CombatMode::Modern, |server| {
-                server.advanced_config.pvp.combat
+                server.combat_mode()
             })
     }
 

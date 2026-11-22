@@ -3452,8 +3452,8 @@ impl Player {
             }
         }
         self.last_attacked_ticks.fetch_add(1, Ordering::Relaxed);
-        if server.advanced_config.pvp.combat.is_legacy() {
-            self.hide_attack_gauge();
+        if server.combat_mode().is_legacy() {
+            self.sync_combat_attributes(pumpkin_config::CombatMode::Legacy1_8);
         }
 
         self.living_entity.tick(self, server);
