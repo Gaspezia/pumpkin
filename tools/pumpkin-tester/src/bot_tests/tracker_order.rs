@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, atomic::Ordering},
+    time::Duration,
+};
 
 use pumpkin_core::{
     entity::{Entity, EntityBase, passive::sheep::SheepEntity},
@@ -19,6 +22,8 @@ const TICKS: usize = 12;
 const SET_X: f64 = 0.5;
 // Gap that ends a drain; generous, the VM is often loaded.
 const QUIET: Duration = Duration::from_secs(1);
+// Longest wait for the knockback packet already queued by the tick that handled the hit.
+const HIT_WAIT: Duration = Duration::from_secs(10);
 
 /// Reads every pending packet and returns the velocities sent for `id`.
 async fn drain_velocities(bot: &mut HeadlessBot, id: i32) -> Result<Vec<Vector3<f64>>, String> {
@@ -40,6 +45,30 @@ async fn drain_velocities(bot: &mut HeadlessBot, id: i32) -> Result<Vec<Vector3<
             out.push(v);
         }
     }
+}
+
+/// Reads packets until a horizontal velocity for `id` arrives; `None` after `HIT_WAIT`.
+async fn wait_horizontal_velocity(
+    bot: &mut HeadlessBot,
+    id: i32,
+) -> Result<Option<Vector3<f64>>, String> {
+    let velocity_id = CEntityVelocity::to_id(CURRENT_MC_VERSION);
+    let deadline = tokio::time::Instant::now() + HIT_WAIT;
+    while let Ok(read) = tokio::time::timeout_at(deadline, bot.reader.get_raw_packet()).await {
+        let pkt = read.map_err(|err| format!("Bot read error: {err}"))?;
+        if pkt.id != velocity_id {
+            continue;
+        }
+        let mut slice = &pkt.payload[..];
+        let entity_id = VarInt::decode(&mut slice).map_err(|err| err.to_string())?;
+        if entity_id.0 == id {
+            let LpVector3d(v) = LpVector3d::read(&mut slice).map_err(|err| err.to_string())?;
+            if v.x.hypot(v.z) > 0.01 {
+                return Ok(Some(v));
+            }
+        }
+    }
+    Ok(None)
 }
 
 async fn tick(server: &Arc<Server>) {
@@ -109,7 +138,11 @@ pub async fn run_tracker_before_entity_tick_test(
     drain_velocities(bot, id).await?;
     let original_mode = player.gamemode.load();
     player.gamemode.store(GameMode::Survival);
-    let start_health = sheep.mob_entity.living_entity.health.load();
+    // `Player::attack` sets this only once the hit has landed (damage accepted), just before the
+    // knockback. Health is not a marker: the sheep can lose it to the terrain (fall, suffocation)
+    // in a tick that has not handled the packet yet.
+    let attacker = &player.living_entity;
+    attacker.last_attacking_id.store(0, Ordering::Relaxed);
     bot.send_packet(&SAttack {
         entity_id: VarInt(id),
     })
@@ -117,25 +150,27 @@ pub async fn run_tracker_before_entity_tick_test(
     let mut handled = false;
     for _ in 0..50 {
         tick(server).await;
-        if sheep.mob_entity.living_entity.health.load() < start_health {
+        if attacker.last_attacking_id.load(Ordering::Relaxed) == id {
             handled = true;
             break;
         }
     }
     player.gamemode.store(original_mode);
     if !handled {
-        return Err("The bot's attack never reached the sheep".into());
+        return Err("The bot's attack never landed on the sheep".into());
     }
-    let sent = drain_velocities(bot, id).await?;
-    if !sent.iter().any(|v| v.x.hypot(v.z) > 0.01) {
+    // No further tick: a knockback sent late (next tick) must stay missing. The packet is already
+    // queued, so wait for it as long as a loaded VM needs.
+    let sent = wait_horizontal_velocity(bot, id).await?;
+    if sent.is_none() {
         return Err(format!(
-            "Knockback was not sent in the tick that handled the hit ({sent:?}, vel now {:?}, hurt {})",
+            "Knockback was not sent in the tick that handled the hit (vel now {:?}, hurt {})",
             sheep.get_entity().velocity.load(),
             sheep
                 .mob_entity
                 .living_entity
                 .hurt_cooldown
-                .load(std::sync::atomic::Ordering::Relaxed)
+                .load(Ordering::Relaxed)
         ));
     }
     sheep.get_entity().remove();
