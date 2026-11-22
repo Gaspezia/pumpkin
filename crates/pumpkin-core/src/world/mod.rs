@@ -5644,7 +5644,7 @@ impl World {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         for passenger in passengers {
-            base_entity.remove_passenger(passenger.get_entity().entity_id);
+            base_entity.remove_passenger_on_vehicle_removal(passenger.get_entity().entity_id);
         }
 
         self.spawn_state.load().remove_entity(self, entity);

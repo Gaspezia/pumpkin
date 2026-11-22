@@ -5593,8 +5593,20 @@ impl Entity {
         self.remove_passenger_internal(passenger_id, false);
     }
 
-    #[allow(clippy::too_many_lines)]
     fn remove_passenger_internal(&self, passenger_id: i32, reposition: bool) {
+        self.remove_passenger_with(passenger_id, reposition, true);
+    }
+
+    /// Ejects a passenger because its vehicle is being removed. The dismount events are
+    /// delivered without being awaited and cannot cancel (Paper: `isCancellable() == false`):
+    /// awaiting a blocking handler would deadlock a plugin whose own host call (`remove`)
+    /// holds the store the handler needs.
+    pub(crate) fn remove_passenger_on_vehicle_removal(&self, passenger_id: i32) {
+        self.remove_passenger_with(passenger_id, true, false);
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn remove_passenger_with(&self, passenger_id: i32, reposition: bool, cancellable: bool) {
         let mut dismount_event =
             crate::plugin::api::events::entity::entity_dismount::EntityDismountEvent::new(
                 passenger_id,
@@ -5606,14 +5618,23 @@ impl Entity {
                 passenger_id,
             );
         if let Some(server) = self.world.load().server.upgrade() {
-            server
-                .plugin_manager
-                .fire_blocking(&server, &mut dismount_event);
-            server
-                .plugin_manager
-                .fire_blocking(&server, &mut vehicle_exit);
+            if cancellable {
+                server
+                    .plugin_manager
+                    .fire_blocking(&server, &mut dismount_event);
+                server
+                    .plugin_manager
+                    .fire_blocking(&server, &mut vehicle_exit);
+            } else {
+                let (manager, runtime) = (server.plugin_manager.clone(), server.runtime.clone());
+                let (mut dismount, mut exit) = (dismount_event.clone(), vehicle_exit.clone());
+                runtime.spawn(async move {
+                    manager.fire(&server, &mut dismount).await;
+                    manager.fire(&server, &mut exit).await;
+                });
+            }
         }
-        if dismount_event.cancelled || vehicle_exit.cancelled {
+        if cancellable && (dismount_event.cancelled || vehicle_exit.cancelled) {
             return;
         }
 
