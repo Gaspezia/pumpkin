@@ -1704,16 +1704,6 @@ impl World {
         let chunk_elapsed = t_chunks.elapsed();
 
         let players = self.players.load();
-
-        // Vanilla/Paper order: `ServerLevel.tick` runs `chunkSource.tick` ->
-        // `ChunkMap.tick` -> `ServerEntity.sendChanges` (ServerLevel.java:364) BEFORE the entity
-        // tick list (:385). Packets handled after the previous tick (knockback `hurtMarked`) and
-        // plugin tasks run before this point, so watchers get the value as set, not the one
-        // friction has already decayed this tick.
-        for player in players.iter() {
-            player.send_velocity_changes();
-        }
-        self.entity_tracker.update_all(self);
         let player_count = players.len();
 
         let t_players = std::time::Instant::now();
@@ -1737,6 +1727,16 @@ impl World {
             touch_entities(self, player);
         }
         let player_elapsed = t_players.elapsed();
+
+        // Vanilla/Paper order: a velocity cause (plugin task at the head of the tick, packets
+        // handled between ticks by `managedBlock`/`ensureRunningOnSameThread`, pushes) comes
+        // first, then `ChunkMap.tick` -> `ServerEntity.sendChanges` (ServerLevel.java:364),
+        // then the entity tick list (:385). Watchers get the value as set, not the one friction
+        // decays this tick, and a hit is sent in the tick that handled it.
+        for player in players.iter() {
+            player.send_velocity_changes();
+        }
+        self.entity_tracker.update_all(self);
 
         let entities_to_tick = self.entities.load();
         let entity_count = entities_to_tick.len();
