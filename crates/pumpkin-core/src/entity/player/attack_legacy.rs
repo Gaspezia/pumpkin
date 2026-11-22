@@ -248,7 +248,8 @@ impl Player {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
-        if Arc::as_ptr(&current).cast::<()>() != Arc::as_ptr(&self.player_screen_handler).cast::<()>()
+        if Arc::as_ptr(&current).cast::<()>()
+            != Arc::as_ptr(&self.player_screen_handler).cast::<()>()
         {
             current
                 .lock()

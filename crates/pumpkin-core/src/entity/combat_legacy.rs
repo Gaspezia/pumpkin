@@ -426,7 +426,10 @@ mod tests {
         assert!(legacy_sword_components());
         cell.set(CombatMode::Modern);
         assert!(!legacy_sword_components());
-        assert_eq!(CombatModeCell::new(CombatMode::Modern).get(), CombatMode::Modern);
+        assert_eq!(
+            CombatModeCell::new(CombatMode::Modern).get(),
+            CombatMode::Modern
+        );
     }
 
     /// Server-side motion of a player standing still: `(0 - 0.08) * 0.98F`.
