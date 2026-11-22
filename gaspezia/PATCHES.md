@@ -34,6 +34,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 44 | Combat PvP 1.8, L9 : rangee des pieds gardee dans l'exposition d'explosion | branche `gaspezia-patch/pvp18-exposure-floor` | aucune (propre au fork) | PR Gaspezia/pumpkin #46 | 2026-11-21 |
 | 45 | `player.spawn-particles-data` : particules a donnees (dust, block, entity-effect...) envoyees a un seul joueur | branche `gaspezia-patch/player-particle-data` | aucune (proposable) | PR Gaspezia/pumpkin (lot 6 du 2026-11-22) | 2026-11-22 |
 | 46 | `CHeadRot` (`entity_head_rotation`) envoye seulement pour les entites vivantes, a l'identique de vanilla (`Entity.getYHeadRot()` vaut 0 hors `LivingEntity`, octet inchange donc aucun paquet) ; un display ou toute entite non vivante n'en emet plus, joueurs, PNJ et mobs inchanges | branche `gaspezia-patch/head-rotation-living-only` | aucune (proposable) | PR Gaspezia/pumpkin | 2026-11-22 |
+| 47 | Retrait d'un vehicule : l'ejection des passagers ne bloque plus sur `entity-dismount` (fin de l'interblocage du plugin) | branche `gaspezia-patch/vehicle-removal-dismount` | aucune (proposable) | PR Gaspezia/pumpkin (lot 6 du 2026-11-22) | 2026-11-22 |
 | 37 | Combat PvP 1.8, lot 3 (L7, canne a peche) : lancer 1,5, gravite 0,04 puis trainee 0,92/0,5, accroche par un coup a 0 degat (recul et invulnerabilite), jamais de traction d'un joueur, flotteur retire si la canne n'est plus tenue | branche `gaspezia-patch/pvp18-rod` | aucune (propre au fork) | PR Gaspezia/pumpkin #39 | 2026-11-21 |
 | 36 | Combat PvP 1.8, lot 3 (L6, projectiles) : depart a l'oeil avec decalage lateral 0,16, imprecision gaussienne 0,0075, ordre deplacement-trainee-gravite des objets lances, fleche dans l'eau, marge de collision 0,3, tireur touchable apres 5 ticks, Frappe sans resistance, potion jetable | branche `gaspezia-patch/pvp18-projectiles` | aucune (propre au fork) | PR Gaspezia/pumpkin #38 | 2026-11-21 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
@@ -380,6 +381,14 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Quoi : la marche de rayon moderne part 1e-7 derriere son origine : un echantillon pose sur la face superieure du sol (la rangee des pieds d'une entite au sol) demarre dans le sol et est bloque, soit 0,8 de l'exposition (poussee et degats) contre 1,0 chez Paper. Les echantillons sont releves de 1e-6 en `legacy_1_8` seulement.
 - Fichiers : `crates/pumpkin-core/src/world/explosion.rs`.
 - Propre au fork.
+
+### Patch 47 : retrait d'un vehicule sans attendre `entity-dismount`
+
+- Quoi : `World::remove_entity` ejecte les passagers par `Entity::remove_passenger_on_vehicle_removal`. `EntityDismountEvent` et `VehicleExitEvent` sont alors tires sans attente (tache sur le runtime du serveur) et ne peuvent plus annuler l'ejection. Le chemin ordinaire (`remove_passenger`, descente du joueur, `eject-passenger` d'un plugin) garde les evenements bloquants et annulables.
+- Pourquoi : un plugin qui appelle `remove` sur une entite portant des passagers et qui a un handler `entity-dismount` bloquant se bloquait : l'hote attendait le handler du meme store, occupe par l'appel hote. Paper rend l'evenement non annulable quand le vehicule est retire (`isCancellable() == false`).
+- Fichiers : `crates/pumpkin-core/src/entity/mod.rs`, `crates/pumpkin-core/src/world/mod.rs`.
+- Test : aucun test unitaire (un `Server` ne se construit pas hors serveur) ; preuve au banc avec un plugin qui retire une porteuse avec passagers et un handler de descente bloquant.
+- Proposable upstream : oui.
 
 ### Patch 45 : `player.spawn-particles-data`
 
