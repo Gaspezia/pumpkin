@@ -1704,6 +1704,16 @@ impl World {
         let chunk_elapsed = t_chunks.elapsed();
 
         let players = self.players.load();
+
+        // Vanilla/Paper order: `ServerLevel.tick` runs `chunkSource.tick` ->
+        // `ChunkMap.tick` -> `ServerEntity.sendChanges` (ServerLevel.java:364) BEFORE the entity
+        // tick list (:385). Packets handled after the previous tick (knockback `hurtMarked`) and
+        // plugin tasks run before this point, so watchers get the value as set, not the one
+        // friction has already decayed this tick.
+        for player in players.iter() {
+            player.send_velocity_changes();
+        }
+        self.entity_tracker.update_all(self);
         let player_count = players.len();
 
         let t_players = std::time::Instant::now();
@@ -1856,12 +1866,6 @@ impl World {
         });
         self.order_tick_spawns();
         let entity_elapsed = t_entities.elapsed();
-
-        // Like vanilla `sendChanges`: before the next tick's packets
-        for player in players.iter() {
-            player.send_velocity_changes();
-        }
-        self.entity_tracker.update_all(self);
 
         let mut block_entities: Vec<Arc<dyn BlockEntity>> = Vec::new();
         if self.block_entities.len() < active_chunks.len() {

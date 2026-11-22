@@ -83,8 +83,8 @@ impl Player {
         }
     }
 
-    /// Velocity part of vanilla `ServerEntity.sendChanges`. Runs after the entity pass,
-    /// so this tick's knockback goes out before the next packets and friction.
+    /// Velocity part of vanilla `ServerEntity.sendChanges`. Runs before the entity pass,
+    /// so a knockback taken since the previous tick goes out before friction applies.
     pub fn send_velocity_changes(&self) {
         let entity = self.get_entity();
         if entity.sync_velocity.swap(false, Ordering::SeqCst) {
