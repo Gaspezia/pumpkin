@@ -382,7 +382,7 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-core/src/world/explosion.rs`.
 - Propre au fork.
 
-### Patch 46 : retrait d'un vehicule sans attendre `entity-dismount`
+### Patch 47 : retrait d'un vehicule sans attendre `entity-dismount`
 
 - Quoi : `World::remove_entity` ejecte les passagers par `Entity::remove_passenger_on_vehicle_removal`. `EntityDismountEvent` et `VehicleExitEvent` sont alors tires sans attente (tache sur le runtime du serveur) et ne peuvent plus annuler l'ejection. Le chemin ordinaire (`remove_passenger`, descente du joueur, `eject-passenger` d'un plugin) garde les evenements bloquants et annulables.
 - Pourquoi : un plugin qui appelle `remove` sur une entite portant des passagers et qui a un handler `entity-dismount` bloquant se bloquait : l'hote attendait le handler du meme store, occupe par l'appel hote. Paper rend l'evenement non annulable quand le vehicule est retire (`isCancellable() == false`).
