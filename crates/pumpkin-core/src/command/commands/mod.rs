@@ -14,6 +14,7 @@ mod banlist;
 mod bossbar;
 mod clear;
 mod clone;
+mod combat;
 mod compute;
 mod damage;
 mod data;
@@ -132,6 +133,7 @@ pub fn default_dispatcher(
     saveall::register(&mut dispatcher, registry);
     saveoff::register(&mut dispatcher, registry);
     saveon::register(&mut dispatcher, registry);
+    combat::register(&mut dispatcher, registry);
     setidletimeout::register(&mut dispatcher, registry);
     spreadplayers::register(&mut dispatcher, registry);
     stop::register(&mut dispatcher, registry);

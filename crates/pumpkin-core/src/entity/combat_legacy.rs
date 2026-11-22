@@ -8,8 +8,38 @@
 //! and the vertical cap and the `0.4F` push keep their `f32` rounding. `sin` and `cos` use the
 //! exact `f64` functions rounded to `f32` (1.8 uses a lookup table, within 1e-4 of these).
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use pumpkin_config::CombatMode;
 use pumpkin_data::item::Item;
 use pumpkin_util::math::vector3::Vector3;
+
+/// Combat mode of the server, switchable at runtime (`/combat`). Starts from `[pvp] combat`.
+pub struct CombatModeCell(AtomicBool);
+
+impl CombatModeCell {
+    #[must_use]
+    pub const fn new(mode: CombatMode) -> Self {
+        Self(AtomicBool::new(mode.is_legacy()))
+    }
+
+    #[must_use]
+    pub fn get(&self) -> CombatMode {
+        if self.0.load(Ordering::Relaxed) {
+            CombatMode::Legacy1_8
+        } else {
+            CombatMode::Modern
+        }
+    }
+
+    /// Stores the mode and makes the sword components on the wire follow it.
+    pub fn set(&self, mode: CombatMode) {
+        self.0.store(mode.is_legacy(), Ordering::Relaxed);
+        pumpkin_protocol::codec::item_stack_seralizer::set_legacy_sword_components(
+            mode.is_legacy(),
+        );
+    }
+}
 
 /// Base push of a landed hit, `0.4F`.
 const BASE_PUSH: f64 = 0.400_000_005_960_464_5;
@@ -382,6 +412,25 @@ pub fn explosion_push_reduced(d10: f64, blast_level: i32) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn combat_mode_cell_follows_config_and_toggles_both_ways() {
+        use pumpkin_protocol::codec::item_stack_seralizer::legacy_sword_components;
+        let cell = CombatModeCell::new(CombatMode::Legacy1_8);
+        assert_eq!(cell.get(), CombatMode::Legacy1_8);
+        cell.set(CombatMode::Modern);
+        assert_eq!(cell.get(), CombatMode::Modern);
+        assert!(!legacy_sword_components());
+        cell.set(CombatMode::Legacy1_8);
+        assert_eq!(cell.get(), CombatMode::Legacy1_8);
+        assert!(legacy_sword_components());
+        cell.set(CombatMode::Modern);
+        assert!(!legacy_sword_components());
+        assert_eq!(
+            CombatModeCell::new(CombatMode::Modern).get(),
+            CombatMode::Modern
+        );
+    }
 
     /// Server-side motion of a player standing still: `(0 - 0.08) * 0.98F`.
     const GHOST_ON_GROUND: f64 = -0.078_400_001_5;
