@@ -59,6 +59,20 @@ fn load_proto_chunk(chunk: &crate::chunk::ChunkData, level: &Level) -> ProtoChun
     ProtoChunk::from_chunk_data(chunk, &level.world_gen.load())
 }
 
+/// Puts a loaded chunk's light back in the state a freshly generated chunk starts from (all 0),
+/// so the Lighting stage rebuilds it. Sky 15 is written by the propagator above the heightmap;
+/// seeding 15 would leave it under opaque roofs, where the column descent stops at the first
+/// opaque block.
+pub(crate) fn reset_light_for_relight(proto: &mut ProtoChunk) {
+    let section_count = proto.light.sky_light.len();
+    proto.light.sky_light = (0..section_count)
+        .map(|_| LightContainer::new_empty(0))
+        .collect();
+    proto.light.block_light = (0..section_count)
+        .map(|_| LightContainer::new_empty(0))
+        .collect();
+}
+
 fn process_loaded_chunk(chunk: Arc<crate::chunk::ChunkData>, level: &Level) -> Chunk {
     let pos = ChunkPos::new(chunk.x, chunk.z);
     if chunk.status == ChunkStatus::Full {
@@ -72,14 +86,7 @@ fn process_loaded_chunk(chunk: Arc<crate::chunk::ChunkData>, level: &Level) -> C
             // Stored heightmaps may be stale; sky light must follow the real blocks.
             proto.recompute_heightmaps_from_blocks();
 
-            // Clear all lighting data
-            let section_count = proto.light.sky_light.len();
-            proto.light.sky_light = (0..section_count)
-                .map(|_| LightContainer::new_empty(15))
-                .collect();
-            proto.light.block_light = (0..section_count)
-                .map(|_| LightContainer::new_empty(0))
-                .collect();
+            reset_light_for_relight(&mut proto);
             proto.stage = StagedChunkEnum::Features;
             Chunk::Proto(Box::new(proto))
         } else {
