@@ -434,6 +434,15 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : `reject_client_move` (rappel a la meme position) ne recentre pas, la position ne change pas.
 - Proposable upstream : oui (fidelite vanilla).
 
+### Patch 56 : eclairage des cartes chargees (heightmaps perimees, lumiere uniforme)
+
+- Quoi : (1) `process_loaded_chunk`, branche relight : `recompute_heightmaps_from_blocks` remet les 4 heightmaps a `i16::MIN` (`prime_heightmaps` plafonne son scan a l'ancienne valeur), les recalcule depuis les blocs, puis `snapshot_wg_heightmaps`. Le vanilla derive les sources de ciel des blocs (`ChunkSkyLightSources`), jamais des heightmaps stockees. (2) `LightContainer::light_bytes` : octets d'un conteneur (`Full` tel quel, `Empty(v>0)` en section pleine, `None` seulement pour 0). Utilise par le paquet de lumiere >= 1.18 (avant : tout `Empty` partait dans le masque vide, donc `Empty(15)` = noir), par l'ecriture Anvil et par l'ecriture pump (avant : seuls les `Full` etaient ecrits, `Empty(15)` relu `Empty(0)` avec `isLightOn=1`, noir permanent apres rechargement).
+- Pourquoi : carte du lobby (Paper) dont les heightmaps stockees sont fausses (850 chunks sur 1955) : ciel a 15 dans les blocs pleins, lanternes au-dessus du faux sommet sans emission, sections `Empty(15)` envoyees a 0. Diagnostic chiffre : `.efficient-flow/lobby-rs/diag-eclairage.md`.
+- Propagation laterale (Pumpkin-MC#2733, gate `visited`) : pas reprise. Le test `loaded_map_with_stale_heightmaps_is_relit_from_real_blocks` (dalle 5x5 au-dessus d'un sol, lumiere 14/13/12 sous le bord puis le centre) passe sans le correctif.
+- Fichiers : `crates/pumpkin-world/src/generation/proto_chunk.rs`, `chunk_system/worker_logic.rs`, `chunk/format/mod.rs` (tests `uniform_light_survives_save_and_reload`), `chunk_system/generation.rs` (test de la dalle), `crates/pumpkin-core/src/net/java/chunk_data/light.rs` (test `uniform_light_is_sent_as_a_full_section`).
+- Limites : le recalcul des heightmaps (scan des colonnes) s'ajoute au relight des seuls chunks charges sans lumiere ; non chronometre. Une carte deja sauvegardee par une version precedente garde ses `Empty(15)` perdus (relus a 0 avec `isLightOn=1`) : il faut la relancer depuis la carte d'origine.
+- Proposable upstream : oui (fidelite vanilla).
+
 ## CI du fork
 
 - `rust.yml`, job `Run lints` : le runner hebergé tuait le job (exit 143, aucun pas en échec, vers 1 min 30) pendant clippy sur `pumpkin-core` (mémoire). Le job ajoute 8 Go de swap et limite `CARGO_BUILD_JOBS=2`. Diagnostic : SIGTERM sans message d'erreur, toujours au même endroit, reproductible sur run neuf.
@@ -473,12 +482,3 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 | 2026-11-20 | aucun (patch 32 seul, sans fusion upstream) | aucun | - | tests `pumpkin-wasm-host-v0_2` OK |
 | 2026-11-20 | aucun (patch 33 seul, sans fusion upstream) | aucun | - | clippy + tests `pumpkin-core` `combat_legacy` OK |
 | 2026-11-21 | aucun (patchs 39 a 44 seuls, sans fusion upstream) | aucun | - | tests `pumpkin-core` OK, CI Linux verte, banc Paper 1.8.8 |
-
-### Patch 56 : eclairage des cartes chargees (heightmaps perimees, lumiere uniforme)
-
-- Quoi : (1) `process_loaded_chunk`, branche relight : `recompute_heightmaps_from_blocks` remet les 4 heightmaps a `i16::MIN` (`prime_heightmaps` plafonne son scan a l'ancienne valeur), les recalcule depuis les blocs, puis `snapshot_wg_heightmaps`. Le vanilla derive les sources de ciel des blocs (`ChunkSkyLightSources`), jamais des heightmaps stockees. (2) `LightContainer::light_bytes` : octets d'un conteneur (`Full` tel quel, `Empty(v>0)` en section pleine, `None` seulement pour 0). Utilise par le paquet de lumiere >= 1.18 (avant : tout `Empty` partait dans le masque vide, donc `Empty(15)` = noir), par l'ecriture Anvil et par l'ecriture pump (avant : seuls les `Full` etaient ecrits, `Empty(15)` relu `Empty(0)` avec `isLightOn=1`, noir permanent apres rechargement).
-- Pourquoi : carte du lobby (Paper) dont les heightmaps stockees sont fausses (850 chunks sur 1955) : ciel a 15 dans les blocs pleins, lanternes au-dessus du faux sommet sans emission, sections `Empty(15)` envoyees a 0. Diagnostic chiffre : `.efficient-flow/lobby-rs/diag-eclairage.md`.
-- Propagation laterale (Pumpkin-MC#2733, gate `visited`) : pas reprise. Le test `loaded_map_with_stale_heightmaps_is_relit_from_real_blocks` (dalle 5x5 au-dessus d'un sol, lumiere 14/13/12 sous le bord puis le centre) passe sans le correctif.
-- Fichiers : `crates/pumpkin-world/src/generation/proto_chunk.rs`, `chunk_system/worker_logic.rs`, `chunk/format/mod.rs` (tests `uniform_light_survives_save_and_reload`), `chunk_system/generation.rs` (test de la dalle), `crates/pumpkin-core/src/net/java/chunk_data/light.rs` (test `uniform_light_is_sent_as_a_full_section`).
-- Limites : le recalcul des heightmaps (scan des colonnes) s'ajoute au relight des seuls chunks charges sans lumiere ; non chronometre. Une carte deja sauvegardee par une version precedente garde ses `Empty(15)` perdus (relus a 0 avec `isLightOn=1`) : il faut la relancer depuis la carte d'origine.
-- Proposable upstream : oui (fidelite vanilla).
