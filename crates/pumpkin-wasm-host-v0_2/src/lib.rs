@@ -37,6 +37,7 @@ pub mod item_stack;
 pub mod java_dialogs;
 pub mod living_entity;
 pub mod logging;
+pub mod mannequin;
 pub mod mob;
 pub mod permission;
 pub mod player;
@@ -469,6 +470,10 @@ mod resource_with {
     }
     impl FromResource for plugin::display::InteractionEntity {
         type Internal = Arc<pumpkin_core::entity::interaction::InteractionEntity>;
+    }
+
+    impl FromResource for plugin::mannequin::MannequinEntity {
+        type Internal = Arc<pumpkin_core::entity::decoration::mannequin::MannequinEntity>;
     }
 
     impl FromResource for plugin::world::ChunkBuffer {

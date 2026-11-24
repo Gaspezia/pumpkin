@@ -1,0 +1,41 @@
+interface mannequin {
+    use common.{hand};
+    use %world.{entity};
+    use text.{text-component};
+    use uuid.{uuid};
+
+    /// A single profile property (typically `textures`) with an optional Mojang signature.
+    record profile-property {
+        name: string,
+        value: string,
+        signature: option<string>,
+    }
+
+    /// Skin profile of a mannequin. When both `name` and `id` are present the profile is sent
+    /// to clients as a complete static game profile (no Mojang lookup); otherwise as a partial one.
+    record mannequin-profile {
+        name: option<string>,
+        id: option<uuid>,
+        properties: list<profile-property>,
+    }
+
+    /// The vanilla `minecraft:mannequin` entity (a player-shaped, server-side NPC).
+    resource mannequin-entity {
+        /// Casts an entity to a mannequin. Returns none if the entity is not a mannequin.
+        from-entity: static func(entity: borrow<entity>) -> option<mannequin-entity>;
+        /// Returns the underlying entity.
+        get-entity: func() -> entity;
+        /// Returns the current skin profile.
+        get-profile: func() -> mannequin-profile;
+        /// Sets the skin profile.
+        set-profile: func(profile: mannequin-profile);
+        /// Sets the visible skin layers bitmask (0x7F = all layers).
+        set-layers: func(mask: u8);
+        /// Sets the dominant hand.
+        set-main-hand: func(hand: hand);
+        /// Sets whether the mannequin is immovable.
+        set-immovable: func(immovable: bool);
+        /// Sets the description shown under the name. none hides it.
+        set-description: func(text: option<text-component>);
+    }
+}
