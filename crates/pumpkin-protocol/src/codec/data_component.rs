@@ -2915,25 +2915,37 @@ impl DataComponentCodec<Self> for LodestoneTrackerImpl {
 }
 
 impl DataComponentCodec<Self> for ProfileImpl {
+    /// Mirrors vanilla 26.1 `ResolvableProfile.STREAM_CODEC`: `Either<GameProfile, Partial>`
+    /// (bool `true` = full `GameProfile`: uuid, name, properties; `false` = partial: optional
+    /// name, optional uuid, properties) followed by `PlayerSkin.Patch` (optional body, cape, elytra
+    /// identifiers, then optional model as a bool: `true` = slim).
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_bool(false)?;
-        if let Some(name) = &self.name {
-            seq.write_bool(true)?;
-            seq.write_string(name)?;
-        } else {
-            seq.write_bool(false)?;
-        }
-        if let Some(id) = &self.id {
-            seq.write_bool(true)?;
-            let uuid = uuid::Uuid::from_u128(
-                ((id[0] as u128) << 96)
+        let uuid = self.id.map(|id| {
+            uuid::Uuid::from_u128(
+                ((id[0] as u128 & 0xFFFFFFFF) << 96)
                     | ((id[1] as u128 & 0xFFFFFFFF) << 64)
                     | ((id[2] as u128 & 0xFFFFFFFF) << 32)
                     | (id[3] as u128 & 0xFFFFFFFF),
-            );
-            seq.write_uuid(&uuid)?;
+            )
+        });
+        if let (Some(name), Some(uuid)) = (&self.name, &uuid) {
+            seq.write_bool(true)?;
+            seq.write_uuid(uuid)?;
+            seq.write_string(name)?;
         } else {
             seq.write_bool(false)?;
+            if let Some(name) = &self.name {
+                seq.write_bool(true)?;
+                seq.write_string(name)?;
+            } else {
+                seq.write_bool(false)?;
+            }
+            if let Some(uuid) = &uuid {
+                seq.write_bool(true)?;
+                seq.write_uuid(uuid)?;
+            } else {
+                seq.write_bool(false)?;
+            }
         }
         seq.write_var_int(&VarInt::from(self.properties.len() as i32))?;
         for prop in &self.properties {
@@ -2964,9 +2976,9 @@ impl DataComponentCodec<Self> for ProfileImpl {
         } else {
             seq.write_bool(false)?;
         }
-        if self.model.is_some() {
+        if let Some(model) = &self.model {
             seq.write_bool(true)?;
-            seq.write_var_int(&VarInt(0))?;
+            seq.write_bool(model == "slim")?;
         } else {
             seq.write_bool(false)?;
         }
@@ -3034,8 +3046,8 @@ impl DataComponentCodec<Self> for ProfileImpl {
             None
         };
         let model = if seq.get_bool()? {
-            let _ = seq.get_var_int()?;
-            Some("wide".to_string())
+            let slim = seq.get_bool()?;
+            Some(if slim { "slim" } else { "wide" }.to_string())
         } else {
             None
         };
@@ -3721,6 +3733,62 @@ mod tests {
         let decoded = ProfileImpl::deserialize(&mut encoded.as_slice()).unwrap();
         assert_eq!(decoded.name.as_deref(), Some("Notch"));
         assert_eq!(decoded.id, Some([1, 2, 3, 4]));
+    }
+
+    /// Hand-built from vanilla 26.1 `ResolvableProfile.STREAM_CODEC`
+    /// (`net/minecraft/world/item/component/ResolvableProfile.java`,
+    /// `PlayerSkin.Patch.STREAM_CODEC`, `ByteBufCodecs.GAME_PROFILE`): `true`, uuid, name,
+    /// properties (name, value, nullable signature), then the skin patch.
+    fn full_profile_bytes(model: Option<u8>) -> Vec<u8> {
+        let mut bytes = vec![1];
+        bytes.extend_from_slice(
+            uuid::Uuid::from_u128(0x0000_0001_0000_0002_0000_0003_0000_0004).as_bytes(),
+        );
+        bytes.push(5);
+        bytes.extend_from_slice(b"Notch");
+        bytes.push(1); // one property
+        bytes.push(8);
+        bytes.extend_from_slice(b"textures");
+        bytes.push(4);
+        bytes.extend_from_slice(b"AAAA");
+        bytes.push(1); // signature present
+        bytes.push(3);
+        bytes.extend_from_slice(b"sig");
+        bytes.extend_from_slice(&[0, 0, 0]); // no texture, cape, elytra
+        match model {
+            Some(slim) => bytes.extend_from_slice(&[1, slim]),
+            None => bytes.push(0),
+        }
+        bytes
+    }
+
+    fn full_profile(model: Option<&str>) -> ProfileImpl {
+        ProfileImpl {
+            name: Some("Notch".to_string()),
+            id: Some([1, 2, 3, 4]),
+            properties: vec![ProfileProperty {
+                name: "textures".to_string(),
+                value: "AAAA".to_string(),
+                signature: Some("sig".to_string()),
+            }],
+            model: model.map(String::from),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn name_and_id_are_written_as_a_full_game_profile() {
+        for (model, byte) in [
+            (None, None),
+            (Some("slim"), Some(1)),
+            (Some("wide"), Some(0)),
+        ] {
+            let mut encoded = Vec::new();
+            full_profile(model).serialize(&mut encoded).unwrap();
+            assert_eq!(encoded, full_profile_bytes(byte));
+            let decoded = ProfileImpl::deserialize(&mut encoded.as_slice()).unwrap();
+            assert_eq!(decoded, full_profile(model));
+        }
     }
 
     #[test]

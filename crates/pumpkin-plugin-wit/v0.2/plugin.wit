@@ -70,6 +70,8 @@ world plugin {
     import statistics;
     /// Provides Display and Interaction entities.
     import display;
+    /// Provides the vanilla mannequin entity and its skin profile.
+    import mannequin;
     /// Provides game rules definitions and queries.
     import game-rules;
     /// Provides game event types.
