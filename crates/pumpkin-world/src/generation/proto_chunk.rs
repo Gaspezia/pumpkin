@@ -654,6 +654,18 @@ impl ProtoChunk {
         }
     }
 
+    /// Rebuilds every heightmap from the blocks, ignoring the stored ones. Vanilla derives sky
+    /// light sources from the blocks, and stored heightmaps can be stale (`prime_heightmaps` caps
+    /// its scan at the previous surface, so they are reset first).
+    pub fn recompute_heightmaps_from_blocks(&mut self) {
+        self.flat_surface_height_map = [i16::MIN; CHUNK_AREA];
+        self.flat_ocean_floor_height_map = [i16::MIN; CHUNK_AREA];
+        self.flat_motion_blocking_height_map = [i16::MIN; CHUNK_AREA];
+        self.flat_motion_blocking_no_leaves_height_map = [i16::MIN; CHUNK_AREA];
+        self.prime_heightmaps();
+        self.snapshot_wg_heightmaps();
+    }
+
     #[inline]
     pub const fn snapshot_wg_heightmaps(&mut self) {
         self.flat_surface_wg_height_map = self.flat_surface_height_map;

@@ -495,11 +495,8 @@ impl ChunkData {
     pub fn internal_to_bytes(&self) -> Bytes {
         use pumpkin_nbt::tag::NbtTag;
 
-        fn extract_light_ref(light: Option<&LightContainer>) -> Option<&[u8]> {
-            match light {
-                Some(LightContainer::Full(data)) => Some(data.as_ref()),
-                _ => None,
-            }
+        fn extract_light_ref(light: Option<&LightContainer>) -> Option<std::borrow::Cow<'_, [u8]>> {
+            light.and_then(LightContainer::light_bytes)
         }
 
         let is_light_correct = self
@@ -795,18 +792,14 @@ impl ChunkData {
             block_lock[i].write_pump_binary(&mut out);
             biome_lock[i].write_pump_binary(&mut out);
 
-            let bl = match light_lock.block_light.get(i) {
-                Some(LightContainer::Full(data)) if data.len() == LightContainer::ARRAY_SIZE => {
-                    Some(data.as_ref())
-                }
-                _ => None,
-            };
-            let sl = match light_lock.sky_light.get(i) {
-                Some(LightContainer::Full(data)) if data.len() == LightContainer::ARRAY_SIZE => {
-                    Some(data.as_ref())
-                }
-                _ => None,
-            };
+            let bl = light_lock
+                .block_light
+                .get(i)
+                .and_then(LightContainer::light_bytes);
+            let sl = light_lock
+                .sky_light
+                .get(i)
+                .and_then(LightContainer::light_bytes);
             let mut light_flags = 0u8;
             if bl.is_some() {
                 light_flags |= 1;
@@ -816,10 +809,10 @@ impl ChunkData {
             }
             out.put_u8(light_flags);
             if let Some(data) = bl {
-                out.extend_from_slice(data);
+                out.extend_from_slice(&data);
             }
             if let Some(data) = sl {
-                out.extend_from_slice(data);
+                out.extend_from_slice(&data);
             }
         }
 
@@ -1379,6 +1372,23 @@ impl LightContainer {
         matches!(self, Self::Empty(_))
     }
 
+    /// Nibble bytes of this container as they must be sent or saved: `Full` as is, a uniform
+    /// `Empty(v)` with `v > 0` as a full section of `v`, and `None` only for an all-zero section
+    /// (the "empty" mask on the wire, no tag on disk). Dropping `Empty(15)` turns it into darkness.
+    #[must_use]
+    pub fn light_bytes(&self) -> Option<std::borrow::Cow<'_, [u8]>> {
+        match self {
+            Self::Full(data) if data.len() == Self::ARRAY_SIZE => {
+                Some(std::borrow::Cow::Borrowed(data))
+            }
+            Self::Empty(v) if *v > 0 => Some(std::borrow::Cow::Owned(vec![
+                *v << 4 | *v;
+                Self::ARRAY_SIZE
+            ])),
+            _ => None,
+        }
+    }
+
     #[inline]
     const fn index(x: usize, y: usize, z: usize) -> usize {
         y * 16 * 16 + z * 16 + x
@@ -1686,5 +1696,35 @@ mod tests {
                 .unwrap()
                 .id
         );
+    }
+
+    #[test]
+    fn uniform_light_survives_save_and_reload() {
+        use crate::chunk::ChunkData;
+        use pumpkin_util::math::vector2::Vector2;
+
+        let chunk = ChunkData::empty_sync(0, 0);
+        let mut light = chunk.light_engine.lock().unwrap();
+        light.sky_light = (0..chunk.section.count)
+            .map(|_| LightContainer::Empty(0))
+            .collect();
+        light.block_light = (0..chunk.section.count)
+            .map(|_| LightContainer::Empty(0))
+            .collect();
+        light.sky_light[3] = LightContainer::Empty(15);
+        light.block_light[3] = LightContainer::Empty(7);
+        light.sky_light[4] = LightContainer::Empty(0);
+        drop(light);
+        chunk
+            .light_populated
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+
+        for bytes in [chunk.internal_to_pump_bytes(), chunk.internal_to_bytes()] {
+            let back = ChunkData::from_bytes(&bytes, Vector2::new(0, 0)).expect("chunk reloads");
+            let light = back.light_engine.lock().unwrap();
+            assert_eq!(light.sky_light[3].get(5, 5, 5), 15);
+            assert_eq!(light.block_light[3].get(5, 5, 5), 7);
+            assert_eq!(light.sky_light[4].get(5, 5, 5), 0);
+        }
     }
 }

@@ -5045,9 +5045,10 @@ impl Player {
         let Some(server) = self.world().server.upgrade() else {
             return;
         };
-        if let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id) {
+        let player_arc = self.world().get_player_by_uuid(self.gameprofile.id);
+        if let Some(player_arc) = &player_arc {
             let mut event = PlayerTeleportEvent {
-                player: player_arc,
+                player: player_arc.clone(),
                 from: self.living_entity.entity.pos.load(),
                 to: position,
                 cancelled: false,
@@ -5093,6 +5094,12 @@ impl Player {
             ClientPlatform::Bedrock(client) => {
                 self.send_bedrock_teleport(client);
             }
+        }
+        // Vanilla `ServerPlayer.teleportTo` -> `ChunkMap.move`: the view, the watchers and the
+        // tickets follow the player at once. Waiting for a move packet leaves the old area held
+        // while the player stands still after landing (no position change, no update).
+        if let Some(player_arc) = &player_arc {
+            crate::world::chunker::update_position(player_arc);
         }
     }
 

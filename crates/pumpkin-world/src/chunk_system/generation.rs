@@ -191,6 +191,114 @@ mod tests {
         );
     }
 
+    /// Builds a 3x3 `Cache` of loaded-looking chunks (light reset exactly as the relight branch of
+    /// `process_loaded_chunk` does), runs the Lighting stage and returns the centre chunk.
+    fn relight_3x3(fill: impl Fn(i32, i32, &mut crate::ProtoChunk)) -> crate::ProtoChunk {
+        use crate::chunk_system::Cache;
+        use crate::chunk_system::worker_logic::reset_light_for_relight;
+        use pumpkin_config::lighting::LightingEngineConfig;
+
+        let world_gen = get_world_gen(
+            Seed(42),
+            Dimension::OVERWORLD,
+            false,
+            Vec::new(),
+            String::new(),
+        );
+        let mut cache = Cache::new(-1, -1, 3);
+        for x in -1..=1 {
+            for z in -1..=1 {
+                let mut chunk = crate::ProtoChunk::new(x, z, &world_gen);
+                fill(x, z, &mut chunk);
+                chunk.recompute_heightmaps_from_blocks();
+                reset_light_for_relight(&mut chunk);
+                chunk.stage = StagedChunkEnum::Features;
+                cache.chunks.push(Chunk::Proto(Box::new(chunk)));
+            }
+        }
+        cache.advance(
+            StagedChunkEnum::Lighting,
+            &world_gen,
+            &BlockRegistry,
+            &LightingEngineConfig::Default,
+        );
+        let Chunk::Proto(p) = cache.chunks.swap_remove(4) else {
+            panic!("expected proto")
+        };
+        *p
+    }
+
+    fn sky_at(chunk: &crate::ProtoChunk, x: i32, y: i32, z: i32) -> u8 {
+        chunk.light.sky_light[((y - chunk.bottom_y() as i32) >> 4) as usize].get(
+            x as usize,
+            (y & 15) as usize,
+            z as usize,
+        )
+    }
+
+    #[test]
+    fn relit_chunk_under_full_opaque_roof_has_no_sky_light() {
+        use pumpkin_data::Block;
+        let chunk = relight_3x3(|_, _, c| {
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    c.set_block_state(lx, 0, lz, Block::STONE.default_state);
+                    c.set_block_state(lx, 100, lz, Block::STONE.default_state);
+                }
+            }
+        });
+        for y in [1, 30, 64, 99] {
+            assert_eq!(sky_at(&chunk, 8, y, 8), 0, "sky under roof at y={y}");
+        }
+        assert_eq!(sky_at(&chunk, 8, 101, 8), 15, "open sky above roof");
+    }
+
+    #[test]
+    fn loaded_map_with_stale_heightmaps_is_relit_from_real_blocks() {
+        use pumpkin_data::Block;
+
+        let chunk = relight_3x3(|x, z, chunk| {
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    chunk.set_block_state(lx, 0, lz, Block::STONE.default_state);
+                }
+            }
+            if x == 0 && z == 0 {
+                // 5x5 opaque slab at y=20 with a lantern on it.
+                for lx in 6..=10 {
+                    for lz in 6..=10 {
+                        chunk.set_block_state(lx, 20, lz, Block::STONE.default_state);
+                    }
+                }
+                chunk.set_block_state(8, 21, 8, Block::SEA_LANTERN.default_state);
+                // What a stale map stores: a top far below the slab and the lantern.
+                chunk.flat_surface_height_map = [0; 256];
+                chunk.flat_surface_wg_height_map = [0; 256];
+                chunk.flat_motion_blocking_height_map = [0; 256];
+                chunk.flat_ocean_floor_height_map = [0; 256];
+            }
+        });
+        let sky = |x: i32, y: i32, z: i32| sky_at(&chunk, x, y, z);
+        let block = |x: i32, y: i32, z: i32| {
+            chunk.light.block_light[((y - chunk.bottom_y() as i32) >> 4) as usize].get(
+                x as usize,
+                (y & 15) as usize,
+                z as usize,
+            )
+        };
+        assert_eq!(sky(8, 20, 8), 0, "no sky light inside a solid block");
+        assert_eq!(sky(8, 22, 8), 15, "open sky above the slab");
+        // Lateral spread under the slab, one level lost per cell (vanilla).
+        assert_eq!(sky(5, 19, 8), 15);
+        assert_eq!(sky(6, 19, 8), 14);
+        assert_eq!(sky(7, 19, 8), 13);
+        assert_eq!(sky(8, 19, 8), 12);
+        assert_eq!(sky(8, 1, 8), 12);
+        // The lantern sits above the stale top and must still emit.
+        assert_eq!(block(8, 21, 8), 15);
+        assert_eq!(block(8, 22, 8), 14);
+    }
+
     #[test]
     fn dimensions_taller_than_their_noise_settings_generate_all_sections() {
         for (dimension, terrain_state) in [
