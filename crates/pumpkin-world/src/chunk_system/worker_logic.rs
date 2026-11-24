@@ -69,6 +69,8 @@ fn process_loaded_chunk(chunk: Arc<crate::chunk::ChunkData>, level: &Level) -> C
             );
 
             let mut proto = load_proto_chunk(&chunk, level);
+            // Stored heightmaps may be stale; sky light must follow the real blocks.
+            proto.recompute_heightmaps_from_blocks();
 
             // Clear all lighting data
             let section_count = proto.light.sky_light.len();

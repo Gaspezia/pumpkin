@@ -184,16 +184,16 @@ pub fn light_data_from_chunk(
         for section_index in 0..num_sections {
             let bit_index = section_index + 1;
 
-            if let LightContainer::Full(data) = &light_engine.sky_light[section_index] {
+            if let Some(data) = light_engine.sky_light[section_index].light_bytes() {
                 sky_light_mask |= 1 << bit_index;
-                sky_light_arrays.push(data.to_vec());
+                sky_light_arrays.push(data.into_owned());
             } else {
                 sky_light_empty_mask |= 1 << bit_index;
             }
 
-            if let LightContainer::Full(data) = &light_engine.block_light[section_index] {
+            if let Some(data) = light_engine.block_light[section_index].light_bytes() {
                 block_light_mask |= 1 << bit_index;
-                block_light_arrays.push(data.to_vec());
+                block_light_arrays.push(data.into_owned());
             } else {
                 block_light_empty_mask |= 1 << bit_index;
             }
@@ -211,5 +211,46 @@ pub fn light_data_from_chunk(
             sky_light_arrays,
             block_light_arrays,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uniform_light_is_sent_as_a_full_section() {
+        let chunk = ChunkData::empty_sync(0, 0);
+        let mut light = chunk.light_engine.lock().unwrap();
+        light.sky_light = (0..chunk.section.count)
+            .map(|_| LightContainer::Empty(0))
+            .collect();
+        light.block_light = (0..chunk.section.count)
+            .map(|_| LightContainer::Empty(0))
+            .collect();
+        light.sky_light[2] = LightContainer::Empty(15);
+        light.sky_light[3] = LightContainer::Empty(0);
+        light.block_light[2] = LightContainer::Empty(0);
+        drop(light);
+        for version in [JavaMinecraftVersion::V_1_18, JavaMinecraftVersion::V_1_21] {
+            let data = light_data_from_chunk(&chunk, version).unwrap();
+            // Bit 0 is the section below the world, so section i is bit i + 1.
+            assert!(
+                data.sky_light_mask.get_bit(3),
+                "Empty(15) must be a full section"
+            );
+            assert!(!data.empty_sky_light_mask.get_bit(3));
+            assert!(
+                data.sky_light_arrays
+                    .iter()
+                    .any(|a| a.len() == 2048 && a.iter().all(|&b| b == 0xFF))
+            );
+            assert!(
+                data.empty_sky_light_mask.get_bit(4),
+                "Empty(0) stays in the empty mask"
+            );
+            assert!(!data.sky_light_mask.get_bit(4));
+            assert!(data.empty_block_light_mask.get_bit(3));
+        }
     }
 }
