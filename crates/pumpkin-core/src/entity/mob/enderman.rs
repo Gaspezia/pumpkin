@@ -462,7 +462,8 @@ impl Mob for EndermanEntity {
     }
 
     fn requires_custom_persistence(&self) -> bool {
-        self.get_carried_block().is_some()
+        crate::entity::mob::base_requires_custom_persistence(self.get_entity())
+            || self.get_carried_block().is_some()
     }
 
     fn on_die(&self, _source: Option<&dyn EntityBase>) {

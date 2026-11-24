@@ -1154,64 +1154,174 @@ impl MobEntity {
         false
     }
 
+    /// Vanilla `Mob.checkDespawn`.
     pub fn check_despawn(&self, mob: &dyn Mob) {
         let entity = &self.living_entity.entity;
-
         let world = entity.world.load();
         let pos = entity.pos.load();
-        let players = world.players.load();
 
-        let nearest_dist_sq = players
-            .iter()
-            .filter(|p| p.gamemode.load() != pumpkin_util::GameMode::Spectator)
-            .map(|p| {
-                let pp = p.get_entity().pos.load();
-                let dx = pp.x - pos.x;
-                let dy = pp.y - pos.y;
-                let dz = pp.z - pos.z;
-                dx * dx + dy * dy + dz * dz
-            })
-            .fold(f64::MAX, f64::min);
-
-        if nearest_dist_sq == f64::MAX {
-            return;
-        }
-
-        let no_despawn_distance = f64::from(pumpkin_data::entity::MobCategory::NO_DESPAWN_DISTANCE);
-        if nearest_dist_sq < no_despawn_distance * no_despawn_distance {
-            self.living_entity.no_action_time.store(0, Relaxed);
-        }
-
-        if self.persistence_required.load(Relaxed) || mob.requires_custom_persistence() {
-            return;
-        }
-
-        if (**entity.custom_name.load()).is_some() {
-            return;
-        }
-
-        // Mobs like a converting zombie villager refuse to despawn (`removeWhenFarAway`).
-        if !mob.remove_when_far_away(nearest_dist_sq) {
-            return;
-        }
-
-        let despawn_distance = f64::from(entity.entity_type.category.despawn_distance);
-        if nearest_dist_sq > despawn_distance * despawn_distance {
-            mob.get_entity().remove();
-            return;
-        }
-
-        if self.living_entity.no_action_time.load(Relaxed) > RANDOM_DESPAWN_IDLE_TICKS
-            && mob.get_random().random_range(0..RANDOM_DESPAWN_CHANCE) == 0
-            && nearest_dist_sq > no_despawn_distance * no_despawn_distance
-        {
-            mob.get_entity().remove();
+        let category = entity.entity_type.category;
+        let persistent =
+            self.persistence_required.load(Relaxed) || mob.requires_custom_persistence();
+        let disallowed_in_peaceful = world.level_info.load().difficulty
+            == pumpkin_util::Difficulty::Peaceful
+            && !is_allowed_in_peaceful(entity.entity_type);
+        // Persistent or peaceful-removed mobs never need the player search (`Mob.java:687-695`).
+        let nearest_dist_sq = if persistent || disallowed_in_peaceful {
+            None
+        } else {
+            // `Level.getNearestPlayer(this, -1)`: any distance, spectators excluded.
+            world
+                .players
+                .load()
+                .iter()
+                .filter(|p| p.gamemode.load() != pumpkin_util::GameMode::Spectator)
+                .map(|p| {
+                    let pp = p.get_entity().pos.load();
+                    let (dx, dy, dz) = (pp.x - pos.x, pp.y - pos.y, pp.z - pos.z);
+                    dx * dx + dy * dy + dz * dz
+                })
+                .fold(None, |nearest: Option<f64>, d| {
+                    Some(nearest.map_or(d, |n| n.min(d)))
+                })
+        };
+        let input = DespawnInput {
+            disallowed_in_peaceful,
+            persistent,
+            nearest_dist_sq,
+            despawn_distance: category.despawn_distance,
+            no_despawn_distance: pumpkin_data::entity::MobCategory::NO_DESPAWN_DISTANCE,
+            no_action_time: self.living_entity.no_action_time.load(Relaxed),
+            remove_when_far_away: nearest_dist_sq.is_some_and(|d| mob.remove_when_far_away(d)),
+        };
+        match despawn_decision(&input, || {
+            mob.get_random().random_range(0..RANDOM_DESPAWN_CHANCE) == 0
+        }) {
+            Despawn::Keep => {}
+            Despawn::Remove => entity.remove(),
+            Despawn::ResetIdle => self.living_entity.no_action_time.store(0, Relaxed),
         }
     }
 }
 
 const RANDOM_DESPAWN_IDLE_TICKS: i32 = 600;
 const RANDOM_DESPAWN_CHANCE: u32 = 800;
+
+/// What `Mob.checkDespawn` does this tick.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Despawn {
+    Keep,
+    Remove,
+    /// `noActionTime = 0`.
+    ResetIdle,
+}
+
+/// Every input of `Mob.checkDespawn`, gathered so the decision is a pure function.
+pub struct DespawnInput {
+    /// `Difficulty.PEACEFUL && !getType().isAllowedInPeaceful()`.
+    pub disallowed_in_peaceful: bool,
+    /// `isPersistenceRequired() || requiresCustomPersistence()`.
+    pub persistent: bool,
+    /// Squared distance to the nearest non-spectator player, `None` without any.
+    pub nearest_dist_sq: Option<f64>,
+    /// `MobCategory.getDespawnDistance()`.
+    pub despawn_distance: i32,
+    /// `MobCategory.getNoDespawnDistance()`.
+    pub no_despawn_distance: i32,
+    pub no_action_time: i32,
+    /// `removeWhenFarAway(nearest_dist_sq)`.
+    pub remove_when_far_away: bool,
+}
+
+/// Branch by branch `Mob.checkDespawn` (`Mob.java:690-712`). `random_hit` is only drawn when
+/// vanilla draws `random.nextInt(800) == 0`.
+pub fn despawn_decision(input: &DespawnInput, random_hit: impl FnOnce() -> bool) -> Despawn {
+    // :691 PEACEFUL && !isAllowedInPeaceful -> discard
+    if input.disallowed_in_peaceful {
+        return Despawn::Remove;
+    }
+    // :695 persistent -> noActionTime = 0, return
+    if input.persistent {
+        return Despawn::ResetIdle;
+    }
+    // :699 no player -> nothing
+    let Some(dist_sq) = input.nearest_dist_sq else {
+        return Despawn::Keep;
+    };
+    let despawn = f64::from(input.despawn_distance);
+    // :703 beyond the instant despawn distance
+    if dist_sq > despawn * despawn && input.remove_when_far_away {
+        return Despawn::Remove;
+    }
+    let no_despawn = f64::from(input.no_despawn_distance);
+    // :706 idle for a while, beyond the no-despawn distance, 1 in 800
+    if input.no_action_time > RANDOM_DESPAWN_IDLE_TICKS
+        && random_hit()
+        && dist_sq > no_despawn * no_despawn
+        && input.remove_when_far_away
+    {
+        return Despawn::Remove;
+    }
+    // :708 close to a player -> noActionTime = 0
+    if dist_sq < no_despawn * no_despawn {
+        return Despawn::ResetIdle;
+    }
+    Despawn::Keep
+}
+
+/// Vanilla `EntityType.isAllowedInPeaceful`: every type without `.notInPeaceful()`
+/// (`EntityType.java`, the monsters registered with it).
+#[must_use]
+pub fn is_allowed_in_peaceful(entity_type: &'static pumpkin_data::entity::EntityType) -> bool {
+    use pumpkin_data::entity::EntityType as T;
+    ![
+        &T::BLAZE,
+        &T::BOGGED,
+        &T::BREEZE,
+        &T::CAVE_SPIDER,
+        &T::CREAKING,
+        &T::CREEPER,
+        &T::DROWNED,
+        &T::ELDER_GUARDIAN,
+        &T::ENDERMAN,
+        &T::ENDERMITE,
+        &T::EVOKER,
+        &T::GHAST,
+        &T::GIANT,
+        &T::GUARDIAN,
+        &T::HUSK,
+        &T::ILLUSIONER,
+        &T::MAGMA_CUBE,
+        &T::PARCHED,
+        &T::PHANTOM,
+        &T::PIGLIN_BRUTE,
+        &T::PILLAGER,
+        &T::RAVAGER,
+        &T::SILVERFISH,
+        &T::SKELETON,
+        &T::SLIME,
+        &T::SPIDER,
+        &T::STRAY,
+        &T::VEX,
+        &T::VINDICATOR,
+        &T::WARDEN,
+        &T::WITCH,
+        &T::WITHER,
+        &T::WITHER_SKELETON,
+        &T::ZOGLIN,
+        &T::ZOMBIE,
+        &T::ZOMBIE_VILLAGER,
+        &T::ZOMBIFIED_PIGLIN,
+    ]
+    .contains(&entity_type)
+}
+
+/// `Mob.requiresCustomPersistence` (`Mob.java:682`): `isPassenger() || isLeashed()`. Subclasses
+/// that call `super.requiresCustomPersistence()` start from this.
+#[must_use]
+pub fn base_requires_custom_persistence(entity: &Entity) -> bool {
+    entity.has_vehicle() || entity.is_leashed()
+}
 
 /// Vanilla `Mob.getAttackBoundingBox` without the ravager shrink.
 pub(super) fn attack_bounding_box(entity: &Entity, horizontal_expansion: f64) -> BoundingBox {
@@ -1551,8 +1661,12 @@ pub trait Mob: EntityBase + Send + Sync {
             .has_line_of_sight(&mob_entity.living_entity.entity, target)
     }
 
+    /// `Mob.requiresCustomPersistence`, plus `Raider.requiresCustomPersistence` (in a raid).
     fn requires_custom_persistence(&self) -> bool {
-        false
+        base_requires_custom_persistence(self.get_entity())
+            || self
+                .as_raider()
+                .is_some_and(raider::Raider::has_active_raid)
     }
 
     /// Whether daylight burns this mob. Default: entity tag `burn_in_daylight`.
@@ -1593,8 +1707,24 @@ pub trait Mob: EntityBase + Send + Sync {
         self.get_entity().is_sneaking()
     }
 
-    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
-        self.as_animal().is_none()
+    /// Vanilla `Mob.removeWhenFarAway` (`true`) with the overrides of the shared superclasses:
+    /// `Animal` (`false`), `Raider` (`false` in a raid), `PatrollingMonster`. Types with their
+    /// own override (`Villager`, `AbstractGolem`, `Cat`...) replace this.
+    fn remove_when_far_away(&self, distance_sq: f64) -> bool {
+        if self.as_animal().is_some() {
+            return false;
+        }
+        if self
+            .as_raider()
+            .is_some_and(raider::Raider::has_active_raid)
+        {
+            return false;
+        }
+        if let Some(patrol) = self.as_patrolling_monster() {
+            // PatrollingMonster.java:96
+            return !patrol.is_patrolling() || distance_sq > 16384.0;
+        }
+        true
     }
 
     fn get_max_look_yaw_change(&self) -> f32 {
@@ -3782,6 +3912,241 @@ mod lifecycle_tests {
         assert!(cow_navigating);
         assert!(!rider_navigating);
         assert!(steers_itself);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod despawn_tests {
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering::Relaxed;
+
+    use pumpkin_data::entity::EntityType;
+    use pumpkin_util::math::vector3::Vector3;
+
+    use super::*;
+    use crate::entity::ai::test_support::world;
+    use crate::entity::mob::{
+        patrol::PatrollingMonster, pillager::PillagerEntity, raider::Raider, warden::WardenEntity,
+        zombie::zombie::ZombieEntity,
+    };
+    use crate::entity::passive::{
+        cow::CowEntity, snow_golem::SnowGolemEntity, villager::VillagerEntity,
+        wandering_trader::WanderingTraderEntity,
+    };
+    use crate::world::World;
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    /// A zombie-like mob with no player close: 100 blocks away, idle, removable.
+    fn input() -> DespawnInput {
+        DespawnInput {
+            disallowed_in_peaceful: false,
+            persistent: false,
+            nearest_dist_sq: Some(100.0 * 100.0),
+            despawn_distance: 128,
+            no_despawn_distance: 32,
+            no_action_time: 0,
+            remove_when_far_away: true,
+        }
+    }
+
+    fn decide(i: &DespawnInput, roll: bool) -> Despawn {
+        despawn_decision(i, || roll)
+    }
+
+    #[test]
+    fn peaceful_removes_a_monster_even_when_persistent() {
+        let i = DespawnInput {
+            disallowed_in_peaceful: true,
+            persistent: true,
+            nearest_dist_sq: None,
+            ..input()
+        };
+        assert_eq!(decide(&i, false), Despawn::Remove);
+    }
+
+    #[test]
+    fn persistent_mob_is_kept_and_its_idle_time_reset() {
+        // Name tag, picked up item, `setPersistenceRequired`, passenger, leash...
+        let i = DespawnInput {
+            persistent: true,
+            nearest_dist_sq: Some(1.0e9),
+            ..input()
+        };
+        assert_eq!(decide(&i, true), Despawn::ResetIdle);
+    }
+
+    #[test]
+    fn mob_specific_persistence_keeps_the_mob() {
+        // `requiresCustomPersistence` is folded into `persistent`; the type's own
+        // `removeWhenFarAway(false)` is the other branch.
+        let i = DespawnInput {
+            remove_when_far_away: false,
+            nearest_dist_sq: Some(1.0e9),
+            no_action_time: 10_000,
+            ..input()
+        };
+        assert_eq!(decide(&i, true), Despawn::Keep);
+    }
+
+    #[test]
+    fn no_player_means_no_removal() {
+        let i = DespawnInput {
+            nearest_dist_sq: None,
+            no_action_time: 10_000,
+            ..input()
+        };
+        assert_eq!(decide(&i, true), Despawn::Keep);
+    }
+
+    #[test]
+    fn beyond_128_blocks_removes_only_when_the_type_allows() {
+        let far = DespawnInput {
+            nearest_dist_sq: Some(129.0 * 129.0),
+            ..input()
+        };
+        assert_eq!(decide(&far, false), Despawn::Remove);
+        let exactly = DespawnInput {
+            nearest_dist_sq: Some(128.0 * 128.0),
+            ..input()
+        };
+        assert_eq!(decide(&exactly, false), Despawn::Keep);
+        let protected = DespawnInput {
+            remove_when_far_away: false,
+            ..far
+        };
+        assert_eq!(decide(&protected, true), Despawn::Keep);
+    }
+
+    #[test]
+    fn between_32_and_128_blocks_needs_idle_time_and_the_roll() {
+        let idle = DespawnInput {
+            no_action_time: 601,
+            ..input()
+        };
+        assert_eq!(decide(&idle, true), Despawn::Remove);
+        assert_eq!(decide(&idle, false), Despawn::Keep);
+        // 600 is not enough, and the roll is not even drawn.
+        let mut drawn = false;
+        let not_idle = DespawnInput {
+            no_action_time: 600,
+            ..input()
+        };
+        assert_eq!(
+            despawn_decision(&not_idle, || {
+                drawn = true;
+                true
+            }),
+            Despawn::Keep
+        );
+        assert!(!drawn);
+        let protected = DespawnInput {
+            remove_when_far_away: false,
+            ..idle
+        };
+        assert_eq!(decide(&protected, true), Despawn::Keep);
+    }
+
+    #[test]
+    fn within_32_blocks_resets_idle_time_and_never_removes() {
+        let near = DespawnInput {
+            nearest_dist_sq: Some(31.0 * 31.0),
+            no_action_time: 10_000,
+            ..input()
+        };
+        assert_eq!(decide(&near, true), Despawn::ResetIdle);
+        let edge = DespawnInput {
+            nearest_dist_sq: Some(32.0 * 32.0),
+            ..near
+        };
+        assert_eq!(decide(&edge, false), Despawn::Keep);
+    }
+
+    #[test]
+    fn peaceful_list_matches_vanilla() {
+        assert!(!is_allowed_in_peaceful(&EntityType::ZOMBIE));
+        assert!(!is_allowed_in_peaceful(&EntityType::ZOGLIN));
+        assert!(is_allowed_in_peaceful(&EntityType::PIGLIN));
+        assert!(is_allowed_in_peaceful(&EntityType::HOGLIN));
+        assert!(is_allowed_in_peaceful(&EntityType::VILLAGER));
+        assert!(is_allowed_in_peaceful(&EntityType::SHULKER));
+    }
+
+    fn at(world: &Arc<World>, ty: &'static EntityType) -> Entity {
+        Entity::new(world.clone(), Vector3::new(0.0, 64.0, 0.0), ty)
+    }
+
+    #[tokio::test]
+    async fn a_villager_never_disappears() -> TestResult {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let villager = VillagerEntity::new(at(&world, &EntityType::VILLAGER));
+        assert!(!villager.remove_when_far_away(1.0e12));
+        let trader = WanderingTraderEntity::new(at(&world, &EntityType::WANDERING_TRADER));
+        assert!(!trader.remove_when_far_away(1.0e12));
+        let golem = SnowGolemEntity::new(at(&world, &EntityType::SNOW_GOLEM));
+        assert!(!golem.remove_when_far_away(1.0e12));
+        let warden = WardenEntity::new(at(&world, &EntityType::WARDEN));
+        assert!(!warden.remove_when_far_away(1.0e12));
+        world.level.shutdown().await;
+        Ok(())
+    }
+
+    /// `Shulker extends AbstractGolem` (`AbstractGolem.java:43`) ; `ElderGuardian` sets persistence in its
+    /// constructor (`ElderGuardian.java:33`).
+    #[tokio::test]
+    async fn shulker_and_elder_guardian_stay() -> TestResult {
+        use crate::entity::mob::{elder_guardian::ElderGuardianEntity, shulker::ShulkerEntity};
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let shulker = ShulkerEntity::new(at(&world, &EntityType::SHULKER));
+        assert!(!shulker.remove_when_far_away(1.0e12));
+        let elder = ElderGuardianEntity::new(at(&world, &EntityType::ELDER_GUARDIAN));
+        assert!(elder.mob_entity.persistence_required.load(Relaxed));
+        world.level.shutdown().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn default_mobs_follow_the_vanilla_superclasses() -> TestResult {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        // Mob: true. Animal: false.
+        let zombie = ZombieEntity::new(at(&world, &EntityType::ZOMBIE));
+        assert!(zombie.remove_when_far_away(1.0e12));
+        let cow = CowEntity::new(at(&world, &EntityType::COW));
+        assert!(!cow.remove_when_far_away(1.0e12));
+        // PatrollingMonster: removable unless patrolling and under 128 blocks.
+        let pillager = PillagerEntity::new(at(&world, &EntityType::PILLAGER));
+        assert!(pillager.remove_when_far_away(0.0));
+        pillager.set_patrolling(true);
+        assert!(!pillager.remove_when_far_away(16384.0));
+        assert!(pillager.remove_when_far_away(16385.0));
+        world.level.shutdown().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn passenger_leash_and_raid_require_persistence() -> TestResult {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let zombie = ZombieEntity::new(at(&world, &EntityType::ZOMBIE));
+        assert!(!zombie.requires_custom_persistence());
+        let horse: Arc<dyn EntityBase> = Arc::new(at(&world, &EntityType::HORSE));
+        horse
+            .get_entity()
+            .add_passenger(horse.clone(), zombie.clone());
+        assert!(zombie.requires_custom_persistence());
+        let pillager = PillagerEntity::new(at(&world, &EntityType::PILLAGER));
+        assert!(!pillager.requires_custom_persistence());
+        pillager.get_raider_data().raid_id.store(Some(1));
+        assert!(pillager.requires_custom_persistence());
+        assert!(!pillager.remove_when_far_away(1.0e12));
+        // `setPersistenceRequired` flag feeds `check_despawn`.
+        zombie.get_mob_entity().set_persistence_required();
+        assert!(zombie.get_mob_entity().persistence_required.load(Relaxed));
+        world.level.shutdown().await;
         Ok(())
     }
 }

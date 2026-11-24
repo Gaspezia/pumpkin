@@ -864,6 +864,31 @@ impl HostMob for PluginHostState {
         Ok(entity.get_entity().get_frozen_ticks())
     }
 
+    fn set_remove_when_far_away(
+        &mut self,
+        this: Resource<WitMob>,
+        remove: bool,
+    ) -> wasmtime::Result<()> {
+        let entity = self.get(&this)?;
+        if let Some(mob) = entity.get_mob() {
+            // CraftBukkit: `persistenceRequired = !remove`.
+            mob.get_mob_entity()
+                .persistence_required
+                .store(!remove, std::sync::atomic::Ordering::Relaxed);
+        }
+        Ok(())
+    }
+
+    fn get_remove_when_far_away(&mut self, this: Resource<WitMob>) -> wasmtime::Result<bool> {
+        let entity = self.get(&this)?;
+        // CraftBukkit: `this instanceof Mob mob && !mob.isPersistenceRequired()`.
+        Ok(entity.get_mob().is_some_and(|mob| {
+            !mob.get_mob_entity()
+                .persistence_required
+                .load(std::sync::atomic::Ordering::Relaxed)
+        }))
+    }
+
     fn set_leash_holder(
         &mut self,
         this: Resource<WitMob>,

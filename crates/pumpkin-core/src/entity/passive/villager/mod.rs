@@ -1452,6 +1452,11 @@ impl AgeableMob for VillagerEntity {
 }
 
 impl Mob for VillagerEntity {
+    /// Vanilla `Villager.removeWhenFarAway` (`Villager.java:476`).
+    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
+        false
+    }
+
     fn finalize_spawn_in_biome(&self, biome: &'static pumpkin_data::chunk::Biome) {
         self.finalize_villager_type_in_biome(biome);
     }
