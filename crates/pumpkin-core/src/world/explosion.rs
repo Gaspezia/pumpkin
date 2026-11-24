@@ -96,20 +96,23 @@ pub trait ExplosionDamageCalculator: Send + Sync {
         entity: &dyn EntityBase,
         exposure: f32,
     ) -> f32 {
-        let radius = explosion.power as f64 * 2.0;
-        let distance = (entity
+        let distance = entity
             .get_entity()
             .pos
             .load()
-            .squared_distance_to_vec(&explosion.pos))
-        .sqrt()
-            / radius;
-        let damage_multiplier = (1.0 - distance) * exposure as f64;
-        (f64::midpoint(damage_multiplier * damage_multiplier, damage_multiplier)
-            * 7.0
-            * explosion.power as f64
-            + 1.0) as f32
+            .squared_distance_to_vec(&explosion.pos)
+            .sqrt();
+        vanilla_damage_amount(explosion.power, distance, exposure)
     }
+}
+
+/// Vanilla `ExplosionDamageCalculator.getEntityDamageAmount`: `f = 2 * power`,
+/// `e = (1 - distance / f) * exposure`, damage `(e² + e) / 2 * 7 * f + 1`.
+fn vanilla_damage_amount(power: f32, distance: f64, exposure: f32) -> f32 {
+    let radius = f64::from(power) * 2.0;
+    let damage_multiplier = (1.0 - distance / radius) * f64::from(exposure);
+    (f64::midpoint(damage_multiplier * damage_multiplier, damage_multiplier) * 7.0 * radius + 1.0)
+        as f32
 }
 
 /// Default explosion damage calculator implementing vanilla standard explosion rules.
@@ -918,6 +921,35 @@ mod tests {
             assert!(Explosion::is_rail(rail));
         }
         assert!(!Explosion::is_rail(&Block::STONE));
+    }
+
+    /// Vanilla formula written out as in Java, to compare with `vanilla_damage_amount`.
+    fn java_damage(power: f32, distance: f64, exposure: f32) -> f32 {
+        let f = power * 2.0;
+        let d = distance / f64::from(f);
+        let e = (1.0 - d) * f64::from(exposure);
+        (f64::midpoint(e * e, e) * 7.0 * f64::from(f) + 1.0) as f32
+    }
+
+    #[test]
+    fn damage_amount_matches_vanilla_for_tnt_fireball_and_sheep() {
+        // TNT 4.0, fireball 1.0, SheepWars explosive sheep 6.0 (`sheep.rs:472`).
+        for power in [4.0f32, 1.0, 6.0] {
+            for fraction in [0.0, 0.25, 0.5, 0.9] {
+                for exposure in [1.0f32, 0.5] {
+                    let distance = f64::from(power) * 2.0 * fraction;
+                    let got = super::vanilla_damage_amount(power, distance, exposure);
+                    let want = java_damage(power, distance, exposure);
+                    assert!((got - want).abs() < 1e-4, "{power} {fraction} {exposure}");
+                }
+            }
+        }
+        // By hand: TNT point blank, full exposure: (1 + 1) / 2 * 7 * 8 + 1 = 57.
+        assert!((super::vanilla_damage_amount(4.0, 0.0, 1.0) - 57.0).abs() < 1e-4);
+        // Fireball (f = 2), distance 1 (d = 0.5), exposure 0.5: e = 0.25 -> 0.15625 * 14 + 1.
+        assert!((super::vanilla_damage_amount(1.0, 1.0, 0.5) - 3.1875).abs() < 1e-4);
+        // Sheep (f = 12), distance 6 (d = 0.5), exposure 1: e = 0.5 -> 0.375 * 84 + 1 = 32.5.
+        assert!((super::vanilla_damage_amount(6.0, 6.0, 1.0) - 32.5).abs() < 1e-4);
     }
 
     #[test]

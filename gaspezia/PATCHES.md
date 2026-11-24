@@ -38,6 +38,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 48 | Combat PvP 1.8 : commande `/combat [modern\|legacy_1_8]` (OP niveau 3) qui bascule le mode a chaud ; le mode vit dans un atomique du serveur (`Server::combat_mode()` / `set_combat_mode()`), initialise depuis `[pvp] combat`, non persiste ; les joueurs en ligne recoivent la jauge/vitesse d'attaque et l'inventaire renvoye (`Player::apply_combat_mode`) | branche `gaspezia-patch/pvp18-combat-toggle` | aucune (propre au fork) | PR Gaspezia/pumpkin #53 | 2026-11-22 |
 | 49 | La bordure du monde se reduit aussi cote serveur : `Worldborder::diameter()` interpole entre l'ancienne taille et la cible sur la duree de `set-size-transition` (vanilla `MovingBorderExtent.getSize`) ; degats, `contains`, `clamp`, distance a la bordure l'utilisent ; `init-client` envoie la taille courante et le temps restant | branche `gaspezia-patch/border-lerp-server` | aucune (proposable) | PR Gaspezia/pumpkin (numero a recaler au merge groupe) | 2026-11-22 |
 | 52 | Mannequin vanilla expose aux plugins WASM v0.2 : `mannequin.wit` (`mannequin-entity` : `from-entity`, `get-entity`, `get-profile`, `set-profile`, `set-layers`, `set-main-hand`, `set-immovable`, `set-description`) ; le codec `ProfileImpl` emet la forme statique complete de `ResolvableProfile` (uuid, nom, proprietes) quand `id` et `name` sont presents, et ecrit le modele du patch de skin en booleen (vanilla) | branche `gaspezia-patch/mannequin-wit` | aucune (proposable) | PR Gaspezia/pumpkin (numero a recaler) | 2026-11-23 |
+| 53 | Degats d'explosion vanilla en combat moderne : `get_entity_damage_amount` multiplie par `7 * f` (`f = 2 * puissance`) au lieu de `7 * puissance` ; formule extraite (`vanilla_damage_amount`) et testee contre la formule Java (TNT 4, boule de feu 1, mouton SW 6) ; chemin 1.8 deja juste | branche `gaspezia-patch/explosion-damage-radius` | aucune (proposable) | PR Gaspezia/pumpkin #56 | 2026-11-23 |
 | 37 | Combat PvP 1.8, lot 3 (L7, canne a peche) : lancer 1,5, gravite 0,04 puis trainee 0,92/0,5, accroche par un coup a 0 degat (recul et invulnerabilite), jamais de traction d'un joueur, flotteur retire si la canne n'est plus tenue | branche `gaspezia-patch/pvp18-rod` | aucune (propre au fork) | PR Gaspezia/pumpkin #39 | 2026-11-21 |
 | 36 | Combat PvP 1.8, lot 3 (L6, projectiles) : depart a l'oeil avec decalage lateral 0,16, imprecision gaussienne 0,0075, ordre deplacement-trainee-gravite des objets lances, fleche dans l'eau, marge de collision 0,3, tireur touchable apres 5 ticks, Frappe sans resistance, potion jetable | branche `gaspezia-patch/pvp18-projectiles` | aucune (propre au fork) | PR Gaspezia/pumpkin #38 | 2026-11-21 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
@@ -416,6 +417,13 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-plugin-wit/v0.2/mannequin.wit`, `plugin.wit`, `crates/pumpkin-wasm-host-v0_2/src/mannequin.rs`, `lib.rs`, `crates/pumpkin-protocol/src/codec/data_component.rs`.
 - Limites : rendu du profil statique signe non verifie sur un vrai client 26.x ; ViaBackwards 1.21.4 a 1.21.8 non verifie. `set-profile` remet a zero texture, cape, elytra et modele du patch de skin.
 - Proposable upstream : oui.
+
+### Patch 53 : degats d'explosion vanilla (`7 * f`, `f = 2 * puissance`)
+
+- Quoi : `get_entity_damage_amount` multipliait par `7 * puissance` au lieu de `7 * f` avec `f = 2 * puissance` (vanilla `ExplosionDamageCalculator.getEntityDamageAmount`). Les degats du combat moderne etaient divises par ~2. Formule extraite dans `vanilla_damage_amount` (pure, testee).
+- Chemin 1.8 : `combat_legacy::explosion_damage` utilise deja `8 * radius` avec `radius = 2 * puissance` : pas touche.
+- Fichiers : `crates/pumpkin-core/src/world/explosion.rs` (test `damage_amount_matches_vanilla_for_tnt_fireball_and_sheep`).
+- Proposable upstream : oui (fidelite vanilla).
 
 ## CI du fork
 
