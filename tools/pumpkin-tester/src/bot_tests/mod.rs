@@ -8,6 +8,7 @@ mod polar_bear;
 mod sheep_shearing;
 mod sign_authorization;
 mod status_ping;
+mod teleport_recenter;
 mod world_interaction;
 
 use std::{net::SocketAddr, sync::Arc};
@@ -51,6 +52,8 @@ pub async fn run_bot_tests(
         .await?;
 
     sign_authorization::run_sign_authorization_tests(server, addr, summary_lines).await?;
+
+    teleport_recenter::run_teleport_recenter_test(server, addr, summary_lines).await?;
 
     embedded_stop::run_embedded_stop_test(summary_lines).await?;
 
