@@ -207,6 +207,16 @@ impl crate::entity::ageable::AgeableMob for NautilusEntity {
 }
 
 impl Mob for NautilusEntity {
+    /// Vanilla `AbstractNautilus.requiresCustomPersistence` (`AbstractNautilus.java:524`).
+    fn requires_custom_persistence(&self) -> bool {
+        crate::entity::mob::base_requires_custom_persistence(self.get_entity()) || self.is_tame()
+    }
+
+    /// Vanilla `AbstractNautilus.removeWhenFarAway` (`AbstractNautilus.java:433`).
+    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
+        true
+    }
+
     fn as_ageable(&self) -> Option<&dyn crate::entity::ageable::AgeableMob> {
         Some(self)
     }

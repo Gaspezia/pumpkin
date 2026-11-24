@@ -150,6 +150,11 @@ impl WardenEntity {
 }
 
 impl Mob for WardenEntity {
+    /// Vanilla `Warden.removeWhenFarAway` (`Warden.java:485`).
+    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
+        false
+    }
+
     fn mob_is_pushable(&self) -> bool {
         let pose = self.mob_entity.living_entity.entity.pose.load();
         pose != EntityPose::Digging

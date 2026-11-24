@@ -696,6 +696,14 @@ interface %world {
 
         /// Sets the entity this mob is leashed to, or clears the leash when `none` is passed.
         set-leash-holder: func(holder: option<entity>);
+
+        /// Sets whether this mob may disappear when no player is near (Bukkit `LivingEntity#setRemoveWhenFarAway`).
+        /// `false` marks the mob persistent, as a name tag does; `true` clears that mark. Mob types that never
+        /// despawn (villagers, golems, animals...) keep doing so either way.
+        set-remove-when-far-away: func(remove: bool);
+        /// Returns whether this mob is not marked persistent, i.e. `false` after `set-remove-when-far-away(false)`,
+        /// a name tag or a picked-up item (Bukkit `getRemoveWhenFarAway`). Mob types that never despawn still report `true`.
+        get-remove-when-far-away: func() -> bool;
     }
 
     /// Result of a raycast operation.

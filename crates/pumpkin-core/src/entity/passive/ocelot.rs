@@ -113,6 +113,11 @@ impl crate::entity::ageable::AgeableMob for OcelotEntity {
 }
 
 impl Mob for OcelotEntity {
+    /// Vanilla `Ocelot.removeWhenFarAway` (`Ocelot.java:139`).
+    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
+        !self.is_trusting() && self.get_entity().tick_count.load(Ordering::Relaxed) > 2400
+    }
+
     fn as_ageable(&self) -> Option<&dyn crate::entity::ageable::AgeableMob> {
         Some(self)
     }

@@ -247,7 +247,7 @@ impl Mob for ZombieNautilusEntity {
     }
 
     fn requires_custom_persistence(&self) -> bool {
-        self.get_entity().has_vehicle() || self.is_tame()
+        crate::entity::mob::base_requires_custom_persistence(self.get_entity()) || self.is_tame()
     }
 
     fn remove_when_far_away(&self, _distance_sq: f64) -> bool {

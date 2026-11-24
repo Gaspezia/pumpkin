@@ -865,6 +865,11 @@ impl PiglinEntity {
 }
 
 impl Mob for PiglinEntity {
+    /// Vanilla `Piglin.removeWhenFarAway` (`Piglin.java:188`).
+    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
+        !self.mob_entity.persistence_required.load(Ordering::Relaxed)
+    }
+
     fn get_ambient_sound(&self) -> Option<Sound> {
         Some(PiglinAi::get_sound_for_activity(self, self.activity.load()))
     }

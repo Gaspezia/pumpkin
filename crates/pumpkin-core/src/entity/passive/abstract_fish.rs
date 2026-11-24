@@ -165,7 +165,7 @@ pub trait AbstractFish: WaterAnimal + crate::entity::bucketable::Bucketable {
 
     fn fish_requires_custom_persistence(&self) -> bool {
         let entity = self.get_entity();
-        self.is_from_bucket() || entity.has_vehicle() || entity.is_leashed()
+        self.is_from_bucket() || crate::entity::mob::base_requires_custom_persistence(entity)
     }
 }
 

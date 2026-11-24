@@ -228,6 +228,17 @@ impl Animal for AxolotlEntity {
 }
 
 impl Mob for AxolotlEntity {
+    /// Vanilla `Axolotl.requiresCustomPersistence` (`Axolotl.java:462`).
+    fn requires_custom_persistence(&self) -> bool {
+        crate::entity::mob::base_requires_custom_persistence(self.get_entity())
+            || self.is_from_bucket()
+    }
+
+    /// Vanilla `Axolotl.removeWhenFarAway` (`Axolotl.java:516`).
+    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
+        !self.is_from_bucket() && self.get_entity().custom_name.load().is_none()
+    }
+
     fn as_ageable(&self) -> Option<&dyn AgeableMob> {
         Some(self)
     }

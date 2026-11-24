@@ -629,6 +629,12 @@ impl AgeableMob for WanderingTraderEntity {
 }
 
 impl Mob for WanderingTraderEntity {
+    /// Vanilla `WanderingTrader.removeWhenFarAway` (`WanderingTrader.java:143`); the trader
+    /// leaves through its own despawn delay.
+    fn remove_when_far_away(&self, _distance_sq: f64) -> bool {
+        false
+    }
+
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
     }
