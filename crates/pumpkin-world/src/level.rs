@@ -94,6 +94,10 @@ pub struct Level {
     /// Handles runtime lighting updates
     pub light_engine: DynamicLightEngine,
 
+    /// Loaded chunks whose light a relight wrote since the last tick (vanilla `ChunkHolder.sectionLightChanged`);
+    /// drained by the world, which sends the new light to the players watching them.
+    light_changed: std::sync::Mutex<std::collections::HashSet<Vector2<i32>>>,
+
     /// Tracks tasks associated with this world instance
     tasks: TaskTracker,
     pub rt_handle: OnceLock<tokio::runtime::Handle>,
@@ -299,6 +303,7 @@ impl Level {
             level_folder,
             lighting_config: level_config.lighting,
             light_engine: DynamicLightEngine::new(dim_min_y, dim_min_y + dim_height),
+            light_changed: std::sync::Mutex::default(),
             chunk_saver,
             entity_saver,
             schedule_tick_counts: AtomicU64::new(0),
@@ -928,6 +933,25 @@ impl Level {
         {
             error!("Failed writing Chunk to disk {error}");
         }
+    }
+
+    pub fn mark_light_changed(&self, pos: Vector2<i32>) {
+        self.light_changed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(pos);
+    }
+
+    /// Chunks whose light changed since the last call.
+    pub fn take_light_changed(&self) -> Vec<Vector2<i32>> {
+        std::mem::take(
+            &mut *self
+                .light_changed
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+        .into_iter()
+        .collect()
     }
 
     pub fn is_chunk_loaded(&self, coordinates: &Vector2<i32>) -> bool {

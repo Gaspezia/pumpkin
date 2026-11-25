@@ -1,3 +1,4 @@
+use super::ChunkPos;
 use super::chunk_state::{Chunk, StagedChunkEnum};
 use crate::ProtoChunk;
 use crate::chunk::ChunkHeightmapType;
@@ -22,6 +23,9 @@ pub struct Cache {
     pub z: i32,
     pub size: i32,
     pub chunks: Vec<Chunk>,
+    /// Already-loaded (`Level`) chunks whose light was written during this task. Players may
+    /// already hold them, so the owner of the cache forwards these to `Level::mark_light_changed`.
+    pub light_changed: std::collections::HashSet<ChunkPos>,
     surface_biomes: Option<Box<SurfaceBiomeNeighborhood>>,
 }
 
@@ -604,6 +608,7 @@ impl Cache {
             z,
             size,
             chunks: Vec::with_capacity((size * size) as usize),
+            light_changed: std::collections::HashSet::new(),
             surface_biomes: None,
         }
     }

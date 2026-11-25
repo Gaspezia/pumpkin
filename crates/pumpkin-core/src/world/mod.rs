@@ -44,6 +44,7 @@ pub mod village_siege;
 pub mod wandering_trader_spawner;
 
 use crate::block::RandomTickArgs;
+use crate::net::java::chunk_data::ChunkLightExt;
 use crate::world::chunker::is_within_chebyshev_distance;
 use crate::{block::BlockEvent, entity::item::ItemEntity};
 use crate::{
@@ -102,6 +103,7 @@ use pumpkin_inventory::{Clearable, Inventory};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::bedrock::client::set_actor_data::{CSetActorData, PropertySyncData};
 use pumpkin_protocol::bedrock::client::start_game::{CStartGame, ServerTelemetryData};
+use pumpkin_protocol::java::client::play::CLightUpdate;
 use pumpkin_protocol::java::client::play::{
     CBlockUpdate, CDisguisedChatMessage, CExplosion, CRespawn, CSetBlockDestroyStage, CWorldEvent,
     PlayerSpawnData,
@@ -1675,6 +1677,7 @@ impl World {
         let start = std::time::Instant::now();
 
         self.flush_block_updates();
+        self.flush_light_updates();
         self.flush_synced_block_events();
         self.update_active_chunks();
         self.process_poi_chunks();
@@ -1969,6 +1972,22 @@ impl World {
         }
     }
 
+    /// Sends the new light of chunks written by a relight since the last tick to the players
+    /// watching them (vanilla `ChunkHolder.broadcastChanges` -> `ClientboundLightUpdatePacket`).
+    // ponytail: whole chunk instead of vanilla's changed-section masks; add masks if the packet size shows up.
+    pub fn flush_light_updates(&self) {
+        for pos in self.level.take_light_changed() {
+            let packet = self.level.read_chunk_sync(&pos, |chunk| {
+                CLightUpdate::from_chunk(chunk, CURRENT_MC_VERSION)
+            });
+            match packet {
+                Some(Ok(packet)) => self.broadcast_to_chunk(pos, &packet),
+                Some(Err(err)) => error!("Failed to build light update for {pos:?}: {err}"),
+                None => {}
+            }
+        }
+    }
+
     #[expect(clippy::too_many_lines)]
     pub fn flush_block_updates(&self) {
         let mut block_state_updates_by_chunk_section: HashMap<
@@ -1991,7 +2010,8 @@ impl World {
         }
 
         // TODO: only send packet to players who have the chunks loaded
-        // TODO: Send light updates to update the wire directly next to a broken block
+        // In-game light changes are not broadcast on purpose: the client recomputes light on a block
+        // change itself. Only relights that write into already-sent chunks are (`flush_light_updates`).
         for (chunk_section, updates) in block_state_updates_by_chunk_section {
             if updates.is_empty() {
                 continue;

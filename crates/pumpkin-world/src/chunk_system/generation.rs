@@ -205,6 +205,15 @@ mod tests {
     fn relight_3x3_cache(
         fill: impl Fn(i32, i32, &mut crate::ProtoChunk),
     ) -> crate::chunk_system::Cache {
+        relight_3x3_cache_with(fill, |_, _| false)
+    }
+
+    /// Like `relight_3x3_cache`, but the chunks for which `is_loaded` is true are `Level` chunks
+    /// (already sent to players) when the centre is relit.
+    fn relight_3x3_cache_with(
+        fill: impl Fn(i32, i32, &mut crate::ProtoChunk),
+        is_loaded: impl Fn(i32, i32) -> bool,
+    ) -> crate::chunk_system::Cache {
         use crate::chunk_system::Cache;
         use crate::chunk_system::worker_logic::reset_light_for_relight;
         use pumpkin_config::lighting::LightingEngineConfig;
@@ -224,7 +233,14 @@ mod tests {
                 chunk.recompute_heightmaps_from_blocks();
                 reset_light_for_relight(&mut chunk);
                 chunk.stage = StagedChunkEnum::Features;
-                cache.chunks.push(Chunk::Proto(Box::new(chunk)));
+                let mut chunk = Chunk::Proto(Box::new(chunk));
+                if is_loaded(x, z) {
+                    chunk.upgrade_to_level_chunk(
+                        world_gen.dimension(),
+                        &LightingEngineConfig::Default,
+                    );
+                }
+                cache.chunks.push(chunk);
             }
         }
         cache.advance(
@@ -267,6 +283,30 @@ mod tests {
                 "sky under neighbour roof at x={x}"
             );
         }
+    }
+
+    #[test]
+    fn light_written_into_loaded_neighbour_is_reported_for_broadcast() {
+        use pumpkin_data::Block;
+        use pumpkin_util::math::vector2::Vector2;
+        // Covered neighbour (-1,0) is already a Level chunk: the centre relight writes sky light
+        // into it, which players holding it must be told about. Untouched neighbours must not
+        // be reported, nor Proto chunks (they are sent when they become Level).
+        let cache = relight_3x3_cache_with(
+            |x, _, c| {
+                for lx in 0..16 {
+                    for lz in 0..16 {
+                        c.set_block_state(lx, 0, lz, Block::STONE.default_state);
+                        if x == -1 {
+                            c.set_block_state(lx, 100, lz, Block::STONE.default_state);
+                        }
+                    }
+                }
+            },
+            |x, z| x != 0 || z != 0,
+        );
+        assert!(cache.light_changed.contains(&Vector2::new(-1, 0)));
+        assert!(!cache.light_changed.contains(&Vector2::new(0, 0)));
     }
 
     #[test]
