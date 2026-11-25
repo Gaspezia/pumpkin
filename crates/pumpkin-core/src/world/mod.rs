@@ -110,6 +110,8 @@ use pumpkin_protocol::java::client::play::{
     CPlayerSpawnPosition, CRecipeBookAdd, CRecipeBookSettings, CSystemChatMessage,
 };
 use pumpkin_protocol::java::client::play::{CSetEntityMetadata, Metadata};
+use pumpkin_protocol::java::client::play::CLightUpdate;
+use crate::net::java::chunk_data::ChunkLightExt;
 use pumpkin_protocol::{
     BClientPacket, ClientPacket, IdOr, SoundEvent,
     bedrock::{
@@ -1675,6 +1677,7 @@ impl World {
         let start = std::time::Instant::now();
 
         self.flush_block_updates();
+        self.flush_light_updates();
         self.flush_synced_block_events();
         self.update_active_chunks();
         self.process_poi_chunks();
@@ -1966,6 +1969,22 @@ impl World {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for (pos, state_id) in changes {
             guard.insert(*pos, *state_id);
+        }
+    }
+
+    /// Sends the new light of chunks whose light changed since the last tick to the players
+    /// watching them (vanilla `ChunkHolder.broadcastChanges` -> `ClientboundLightUpdatePacket`).
+    // ponytail: whole chunk instead of vanilla's changed-section masks; add masks if the packet size shows up.
+    pub fn flush_light_updates(&self) {
+        for pos in self.level.take_light_changed() {
+            let packet = self.level.read_chunk_sync(&pos, |chunk| {
+                CLightUpdate::from_chunk(chunk, CURRENT_MC_VERSION)
+            });
+            match packet {
+                Some(Ok(packet)) => self.broadcast_to_chunk(pos, &packet),
+                Some(Err(err)) => error!("Failed to build light update for {pos:?}: {err}"),
+                None => {}
+            }
         }
     }
 

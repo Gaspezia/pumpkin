@@ -300,6 +300,9 @@ pub fn run_generation(
             portal_ref,
             &level.lighting_config,
         );
+        for pos in cache.light_changed.drain() {
+            level.mark_light_changed(pos);
+        }
         cache // Return cache on success
     }));
 

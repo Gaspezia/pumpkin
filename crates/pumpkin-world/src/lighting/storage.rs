@@ -1,4 +1,5 @@
 use crate::chunk_system::chunk_state::Chunk;
+use crate::chunk_system::ChunkPos;
 use crate::chunk_system::generation_cache::Cache;
 use crate::generation::height_limit::HeightLimitView;
 use pumpkin_util::math::position::BlockPos;
@@ -93,6 +94,7 @@ pub fn set_block_light(cache: &mut Cache, pos: BlockPos, level: u8) {
             };
             if marked_dirty {
                 c.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+                cache.light_changed.insert(ChunkPos::new(c.x, c.z));
             }
         }
         Chunk::Proto(c) => {
@@ -173,6 +175,7 @@ pub fn set_sky_light(cache: &mut Cache, pos: BlockPos, level: u8) {
             };
             if marked_dirty {
                 c.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+                cache.light_changed.insert(ChunkPos::new(c.x, c.z));
             }
         }
         Chunk::Proto(c) => {
