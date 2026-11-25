@@ -94,7 +94,7 @@ pub struct Level {
     /// Handles runtime lighting updates
     pub light_engine: DynamicLightEngine,
 
-    /// Loaded chunks whose light changed since the last tick (vanilla `ChunkHolder.sectionLightChanged`);
+    /// Loaded chunks whose light a relight wrote since the last tick (vanilla `ChunkHolder.sectionLightChanged`);
     /// drained by the world, which sends the new light to the players watching them.
     light_changed: std::sync::Mutex<std::collections::HashSet<Vector2<i32>>>,
 

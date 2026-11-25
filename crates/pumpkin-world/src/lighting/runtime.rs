@@ -575,7 +575,6 @@ impl DynamicLightEngine {
             if !chunk.is_dirty() {
                 chunk.mark_dirty(true);
             }
-            level.mark_light_changed(chunk_coordinate);
             Ok(())
         });
         Ok(())
@@ -635,7 +634,6 @@ impl DynamicLightEngine {
             if !chunk.is_dirty() {
                 chunk.mark_dirty(true);
             }
-            level.mark_light_changed(chunk_coordinate);
             Ok(())
         });
         Ok(())

@@ -1972,7 +1972,7 @@ impl World {
         }
     }
 
-    /// Sends the new light of chunks whose light changed since the last tick to the players
+    /// Sends the new light of chunks written by a relight since the last tick to the players
     /// watching them (vanilla `ChunkHolder.broadcastChanges` -> `ClientboundLightUpdatePacket`).
     // ponytail: whole chunk instead of vanilla's changed-section masks; add masks if the packet size shows up.
     pub fn flush_light_updates(&self) {
@@ -2010,7 +2010,8 @@ impl World {
         }
 
         // TODO: only send packet to players who have the chunks loaded
-        // TODO: Send light updates to update the wire directly next to a broken block
+        // In-game light changes are not broadcast on purpose: the client recomputes light on a block
+        // change itself. Only relights that write into already-sent chunks are (`flush_light_updates`).
         for (chunk_section, updates) in block_state_updates_by_chunk_section {
             if updates.is_empty() {
                 continue;
