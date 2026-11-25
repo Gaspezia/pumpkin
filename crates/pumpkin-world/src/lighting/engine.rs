@@ -321,10 +321,9 @@ impl<P: LightProvider> LightPropagator<P> {
                 let ny = neighbor_pos.0.y;
                 let nz = neighbor_pos.0.z;
 
-                if self.visited.is_visited(nx, ny, nz) {
-                    continue;
-                }
-
+                // No `visited` gate here: gating before the level comparison froze every cell a
+                // seeding pass had claimed at its seeded value. Termination comes from
+                // `new_level > neighbor_light` (levels only rise, bounded by 15).
                 if ny < min_y || ny >= max_y {
                     continue;
                 }
@@ -419,7 +418,7 @@ impl<P: LightProvider> LightPropagator<P> {
                         }
                     }
 
-                    if new_level > 1 && self.visited.test_and_set(nx, ny, nz) {
+                    if new_level > 1 {
                         self.queue.push_back(PropagationEntry {
                             pos: neighbor_pos,
                             skip_direction: Some(dir.opposite()),
@@ -860,7 +859,7 @@ impl SkyLightPropagator {
             }
         }
 
-        self.propagate_with_bounds(cache, start_x, end_x, start_z, end_z);
+        self.propagate(cache);
     }
 }
 

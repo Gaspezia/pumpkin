@@ -194,6 +194,17 @@ mod tests {
     /// Builds a 3x3 `Cache` of loaded-looking chunks (light reset exactly as the relight branch of
     /// `process_loaded_chunk` does), runs the Lighting stage and returns the centre chunk.
     fn relight_3x3(fill: impl Fn(i32, i32, &mut crate::ProtoChunk)) -> crate::ProtoChunk {
+        let Chunk::Proto(p) = relight_3x3_cache(fill).chunks.swap_remove(4) else {
+            panic!("expected proto")
+        };
+        *p
+    }
+
+    /// Same as `relight_3x3` but returns the whole cache; the chunk at (x, z) is at index
+    /// `(x + 1) * 3 + (z + 1)`.
+    fn relight_3x3_cache(
+        fill: impl Fn(i32, i32, &mut crate::ProtoChunk),
+    ) -> crate::chunk_system::Cache {
         use crate::chunk_system::Cache;
         use crate::chunk_system::worker_logic::reset_light_for_relight;
         use pumpkin_config::lighting::LightingEngineConfig;
@@ -222,10 +233,7 @@ mod tests {
             &BlockRegistry,
             &LightingEngineConfig::Default,
         );
-        let Chunk::Proto(p) = cache.chunks.swap_remove(4) else {
-            panic!("expected proto")
-        };
-        *p
+        cache
     }
 
     fn sky_at(chunk: &crate::ProtoChunk, x: i32, y: i32, z: i32) -> u8 {
@@ -234,6 +242,58 @@ mod tests {
             (y & 15) as usize,
             z as usize,
         )
+    }
+
+    #[test]
+    fn sky_light_propagates_deep_into_covered_neighbour() {
+        use pumpkin_data::Block;
+        let cache = relight_3x3_cache(|x, _, c| {
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    c.set_block_state(lx, 0, lz, Block::STONE.default_state);
+                    if x == -1 {
+                        c.set_block_state(lx, 100, lz, Block::STONE.default_state);
+                    }
+                }
+            }
+        });
+        let Chunk::Proto(n) = &cache.chunks[1] else {
+            panic!("expected proto")
+        };
+        for (x, want) in [(15, 14), (14, 13), (12, 11), (5, 4)] {
+            assert_eq!(
+                sky_at(n, x, 99, 8),
+                want,
+                "sky under neighbour roof at x={x}"
+            );
+        }
+    }
+
+    #[test]
+    fn sky_light_dull_pillar_does_not_freeze_neighbour_cells() {
+        use pumpkin_data::Block;
+        // Covered chunk (-1,0) with a pillar on its x=15 edge at z=8: the cell next to it must
+        // still get light from the bright edge cells beside the pillar.
+        let cache = relight_3x3_cache(|x, _, c| {
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    c.set_block_state(lx, 0, lz, Block::STONE.default_state);
+                    if x == -1 {
+                        c.set_block_state(lx, 100, lz, Block::STONE.default_state);
+                    }
+                }
+            }
+            if x == -1 {
+                for y in 1..100 {
+                    c.set_block_state(15, y, 8, Block::STONE.default_state);
+                }
+            }
+        });
+        let Chunk::Proto(n) = &cache.chunks[1] else {
+            panic!("expected proto")
+        };
+        assert_eq!(sky_at(n, 14, 99, 8), 12, "cell beside pillar column");
+        assert_eq!(sky_at(n, 10, 99, 8), 8);
     }
 
     #[test]
