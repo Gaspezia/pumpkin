@@ -44,6 +44,7 @@ pub mod village_siege;
 pub mod wandering_trader_spawner;
 
 use crate::block::RandomTickArgs;
+use crate::net::java::chunk_data::ChunkLightExt;
 use crate::world::chunker::is_within_chebyshev_distance;
 use crate::{block::BlockEvent, entity::item::ItemEntity};
 use crate::{
@@ -102,6 +103,7 @@ use pumpkin_inventory::{Clearable, Inventory};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::bedrock::client::set_actor_data::{CSetActorData, PropertySyncData};
 use pumpkin_protocol::bedrock::client::start_game::{CStartGame, ServerTelemetryData};
+use pumpkin_protocol::java::client::play::CLightUpdate;
 use pumpkin_protocol::java::client::play::{
     CBlockUpdate, CDisguisedChatMessage, CExplosion, CRespawn, CSetBlockDestroyStage, CWorldEvent,
     PlayerSpawnData,
@@ -110,8 +112,6 @@ use pumpkin_protocol::java::client::play::{
     CPlayerSpawnPosition, CRecipeBookAdd, CRecipeBookSettings, CSystemChatMessage,
 };
 use pumpkin_protocol::java::client::play::{CSetEntityMetadata, Metadata};
-use pumpkin_protocol::java::client::play::CLightUpdate;
-use crate::net::java::chunk_data::ChunkLightExt;
 use pumpkin_protocol::{
     BClientPacket, ClientPacket, IdOr, SoundEvent,
     bedrock::{
