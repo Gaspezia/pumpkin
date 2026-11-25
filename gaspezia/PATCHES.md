@@ -43,6 +43,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 54 | Une teleportation recentre la vue, les watchers et les tickets de chunks (`Player::request_teleport` appelle `chunker::update_position`), comme vanilla `ServerPlayer.teleportTo` -> `ChunkMap.move` : plus de chunks de l'ancienne zone retenus tant que le joueur reste immobile apres un `/tp` | branche `gaspezia-patch/teleport-recentre-chunks` | aucune (proposable) | PR Gaspezia/pumpkin (numero a recaler au merge groupe) | 2026-11-23 |
 | 56 | Eclairage des cartes chargees : au relight d'un chunk charge sans lumiere, les heightmaps sont recalculees depuis les blocs (`ProtoChunk::recompute_heightmaps_from_blocks`) au lieu de la valeur stockee, souvent perimee ; un conteneur de lumiere uniforme `Empty(v>0)` est envoye (>= 1.18) et sauvegarde (Anvil et pump) en section pleine (`LightContainer::light_bytes`), il n'est plus lu comme noir ; reprend l'idee de Pumpkin-MC#2612 (partie ciel). |
 | 57 | Eclairage des cartes chargees : au relight, le ciel repart de 0 (comme un chunk genere) et non de 15 ; sous un toit opaque, la descente de colonne s'arretait au premier bloc opaque et laissait le 15 de l'amorce dessous. |
+| 58 | Eclairage : la lumiere du ciel se propage a l'interieur des chunks voisins (propagation sur tout le cache, plus sur la seule fenetre 18x18) ; plus de gel des cellules deja reclamees par une graine (reprend Pumpkin-MC#2733). |
 | 37 | Combat PvP 1.8, lot 3 (L7, canne a peche) : lancer 1,5, gravite 0,04 puis trainee 0,92/0,5, accroche par un coup a 0 degat (recul et invulnerabilite), jamais de traction d'un joueur, flotteur retire si la canne n'est plus tenue | branche `gaspezia-patch/pvp18-rod` | aucune (propre au fork) | PR Gaspezia/pumpkin #39 | 2026-11-21 |
 | 36 | Combat PvP 1.8, lot 3 (L6, projectiles) : depart a l'oeil avec decalage lateral 0,16, imprecision gaussienne 0,0075, ordre deplacement-trainee-gravite des objets lances, fleche dans l'eau, marge de collision 0,3, tireur touchable apres 5 ticks, Frappe sans resistance, potion jetable | branche `gaspezia-patch/pvp18-projectiles` | aucune (propre au fork) | PR Gaspezia/pumpkin #38 | 2026-11-21 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
@@ -462,6 +463,15 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Fichiers : `crates/pumpkin-world/src/chunk_system/worker_logic.rs`, `chunk_system/generation.rs` (tests).
 - Limites : l'occlusion par la FORME (dalles et escaliers a -1 au lieu de bloquer, `lighting/engine.rs`) n'est pas traitee ; couverte par Pumpkin-MC#3238 (PR ouverte).
 - Proposable upstream : oui, meme bug sur upstream/master (`worker_logic.rs`).
+
+### Patch 58 : propagation du ciel entre chunks
+
+- Quoi : `lighting/engine.rs`, `SkyLightPropagator::convert_light` finit par `propagate(cache)` (tout le cache) au lieu de `propagate_with_bounds(...)` sur la fenetre centre +-1 cellule : `visited` etait dimensionne sur cette fenetre et `is_visited` renvoie `true` en dehors, donc la lumiere entree dans un voisin s'arretait a sa 1re cellule. Reprise de Pumpkin-MC#2733 (fermee) : plus de `continue` sur `visited` avant la comparaison de niveaux, et le push ne depend plus de `visited.test_and_set` (`new_level > 1`) ; la terminaison reste assuree par `new_level > neighbor_light` (les niveaux ne font que monter, borne 15). `generation.rs` : `relight_3x3_cache` extrait de `relight_3x3`.
+- Pourquoi : staging, 206 349 voxels (1,7 %) ou Rust vaut 0 et Java 2 a 11 sous les grands couverts ; la lumiere de bloc (deja sur tout le cache) est juste a 99,8 %. Mesures : `.efficient-flow/lobby-rs/diag-eclairage.md`, section « Propagation entre chunks (apres v0.1.18) ».
+- Tests : `sky_light_propagates_deep_into_covered_neighbour` (dalle a y=100 sur le chunk (-1,0), centre (0,0) ouvert : 14/13/11/4) et `sky_light_dull_pillar_does_not_freeze_neighbour_cells`, par le vrai chemin du relight ; rouges sans le correctif.
+- Fichiers : `crates/pumpkin-world/src/lighting/engine.rs`, `chunk_system/generation.rs` (tests).
+- Limites : la lumiere ecrite dans un voisin deja `Level` (donc possiblement deja envoye) n'est pas renvoyee au client : `CLightUpdate::from_chunk` existe mais rien ne l'emet (meme lacune pour la lumiere de bloc et les mises a jour runtime, TODO `world/mod.rs`). Non traite ici.
+- Proposable upstream : oui, meme defaut sur upstream/master.
 
 ## CI du fork
 
