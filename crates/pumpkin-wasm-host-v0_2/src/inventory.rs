@@ -13,6 +13,7 @@ use crate::pumpkin::plugin::{
     },
     item_stack::ItemStack as WitHostItemStack,
 };
+use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_inventory::{Clearable, Inventory};
 use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
@@ -330,6 +331,66 @@ impl HostInventory for PluginHostState {
     fn drop(&mut self, rep: Resource<WitInventory>) -> wasmtime::Result<()> {
         self.drop(rep)
     }
+}
+
+/// Armor equipment slots as (inventory slot, player screen slot), boots first.
+fn armor_slot(slot: &EquipmentSlot) -> Option<(usize, i16)> {
+    if *slot == EquipmentSlot::FEET {
+        Some((36, 8))
+    } else if *slot == EquipmentSlot::LEGS {
+        Some((37, 7))
+    } else if *slot == EquipmentSlot::CHEST {
+        Some((38, 6))
+    } else if *slot == EquipmentSlot::HEAD {
+        Some((39, 5))
+    } else {
+        None
+    }
+}
+
+/// Pairs boots, leggings, chestplate, helmet stacks with their equipment slots.
+fn armor_changes(
+    stacks: Vec<pumpkin_data::item_stack::ItemStack>,
+) -> Vec<(EquipmentSlot, pumpkin_data::item_stack::ItemStack)> {
+    [
+        EquipmentSlot::FEET,
+        EquipmentSlot::LEGS,
+        EquipmentSlot::CHEST,
+        EquipmentSlot::HEAD,
+    ]
+    .into_iter()
+    .zip(stacks)
+    .collect()
+}
+
+/// Writes armor into the inventory and returns the screen slots to resend to the wearer.
+fn write_armor(
+    inventory: &PlayerInventory,
+    changes: &[(EquipmentSlot, pumpkin_data::item_stack::ItemStack)],
+) -> Vec<(i16, pumpkin_data::item_stack::ItemStack)> {
+    changes
+        .iter()
+        .filter_map(|(eq, stack)| {
+            let (inv, screen) = armor_slot(eq)?;
+            inventory.set_slot(inv, stack.clone());
+            Some((screen, stack.clone()))
+        })
+        .collect()
+}
+
+/// Updates the wearer's slots, then shows the armor to the observers in one `SetEquipment`.
+/// The wearer is not a tracking player of itself, so it gets no duplicate.
+async fn apply_armor(
+    player: &pumpkin_core::entity::player::Player,
+    changes: Vec<(EquipmentSlot, pumpkin_data::item_stack::ItemStack)>,
+) {
+    for (screen, stack) in write_armor(player.inventory(), &changes) {
+        let serializer = ItemStackSerializer::from(stack);
+        player
+            .send_client_packet(&CSetContainerSlot::new(0, 0, screen, &serializer))
+            .await;
+    }
+    player.living_entity.send_equipment_changes(&changes);
 }
 
 impl HostInventoryWithStore<PluginHostState> for HasSelf<PluginHostState> {
@@ -1100,17 +1161,19 @@ impl HostPlayerInventoryWithStore<PluginHostState> for HasSelf<PluginHostState> 
         items: Vec<Option<Resource<WitHostItemStack>>>,
     ) -> wasmtime::Result<()> {
         let mut iter = items.into_iter();
-        let boots = iter.next().flatten();
-        let leggings = iter.next().flatten();
-        let chestplate = iter.next().flatten();
-        let helmet = iter.next().flatten();
+        let mut stacks = Vec::with_capacity(4);
+        for _ in 0..4 {
+            stacks.push(if let Some(res) = iter.next().flatten() {
+                accessor.take_res(res)?.lock().await.clone()
+            } else {
+                pumpkin_data::item_stack::ItemStack::EMPTY.clone()
+            });
+        }
         for extra in iter.flatten() {
             accessor.take_res(extra)?;
         }
-        Self::set_boots(accessor, Resource::new_borrow(res.rep()), boots).await?;
-        Self::set_leggings(accessor, Resource::new_borrow(res.rep()), leggings).await?;
-        Self::set_chestplate(accessor, Resource::new_borrow(res.rep()), chestplate).await?;
-        Self::set_helmet(accessor, Resource::new_borrow(res.rep()), helmet).await?;
+        let player = accessor.get_res(&res)?;
+        apply_armor(&player, armor_changes(stacks)).await;
         Ok(())
     }
 
@@ -1133,10 +1196,7 @@ impl HostPlayerInventoryWithStore<PluginHostState> for HasSelf<PluginHostState> 
             pumpkin_data::item_stack::ItemStack::EMPTY.clone()
         };
         let player = accessor.get_res(&res)?;
-        player.inventory().set_slot(39, stack.clone());
-        let stack_serializer = ItemStackSerializer::from(stack);
-        let packet = CSetContainerSlot::new(0, 0, 5, &stack_serializer);
-        player.send_client_packet(&packet).await;
+        apply_armor(&player, vec![(EquipmentSlot::HEAD, stack)]).await;
         Ok(())
     }
 
@@ -1151,10 +1211,7 @@ impl HostPlayerInventoryWithStore<PluginHostState> for HasSelf<PluginHostState> 
             pumpkin_data::item_stack::ItemStack::EMPTY.clone()
         };
         let player = accessor.get_res(&res)?;
-        player.inventory().set_slot(38, stack.clone());
-        let stack_serializer = ItemStackSerializer::from(stack);
-        let packet = CSetContainerSlot::new(0, 0, 6, &stack_serializer);
-        player.send_client_packet(&packet).await;
+        apply_armor(&player, vec![(EquipmentSlot::CHEST, stack)]).await;
         Ok(())
     }
 
@@ -1169,10 +1226,7 @@ impl HostPlayerInventoryWithStore<PluginHostState> for HasSelf<PluginHostState> 
             pumpkin_data::item_stack::ItemStack::EMPTY.clone()
         };
         let player = accessor.get_res(&res)?;
-        player.inventory().set_slot(37, stack.clone());
-        let stack_serializer = ItemStackSerializer::from(stack);
-        let packet = CSetContainerSlot::new(0, 0, 7, &stack_serializer);
-        player.send_client_packet(&packet).await;
+        apply_armor(&player, vec![(EquipmentSlot::LEGS, stack)]).await;
         Ok(())
     }
 
@@ -1187,10 +1241,7 @@ impl HostPlayerInventoryWithStore<PluginHostState> for HasSelf<PluginHostState> 
             pumpkin_data::item_stack::ItemStack::EMPTY.clone()
         };
         let player = accessor.get_res(&res)?;
-        player.inventory().set_slot(36, stack.clone());
-        let stack_serializer = ItemStackSerializer::from(stack);
-        let packet = CSetContainerSlot::new(0, 0, 8, &stack_serializer);
-        player.send_client_packet(&packet).await;
+        apply_armor(&player, vec![(EquipmentSlot::FEET, stack)]).await;
         Ok(())
     }
 
@@ -1258,5 +1309,68 @@ mod item_id_tests {
             assert!(item_id_matches("minecraft:iron_ingot", id));
             assert!(!item_id_matches("gold_ingot", id));
         }
+    }
+}
+
+#[cfg(test)]
+mod armor_broadcast_tests {
+    use super::*;
+    use pumpkin_data::{item::Item, item_stack::ItemStack};
+
+    #[test]
+    fn armor_contents_become_one_batch_and_fill_the_armor_slots() {
+        let stacks = [
+            &Item::IRON_BOOTS,
+            &Item::IRON_LEGGINGS,
+            &Item::IRON_CHESTPLATE,
+            &Item::IRON_HELMET,
+        ]
+        .map(|item| ItemStack::new(1, item))
+        .to_vec();
+        let changes = armor_changes(stacks);
+        let slots: Vec<_> = changes.iter().map(|(s, _)| s.clone()).collect();
+        assert!(
+            slots
+                == [
+                    EquipmentSlot::FEET,
+                    EquipmentSlot::LEGS,
+                    EquipmentSlot::CHEST,
+                    EquipmentSlot::HEAD
+                ]
+        );
+        let inventory = PlayerInventory::new(
+            Arc::new(std::sync::Mutex::new(
+                pumpkin_inventory::entity_equipment::EntityEquipment::default(),
+            )),
+            Arc::new(
+                [
+                    (36, EquipmentSlot::FEET),
+                    (37, EquipmentSlot::LEGS),
+                    (38, EquipmentSlot::CHEST),
+                    (39, EquipmentSlot::HEAD),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        );
+        let screens = write_armor(&inventory, &changes);
+        assert_eq!(
+            screens.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+            [8, 7, 6, 5]
+        );
+        assert_eq!(inventory.get_stack(39).item, &Item::IRON_HELMET);
+        assert_eq!(inventory.get_stack(36).item, &Item::IRON_BOOTS);
+    }
+
+    #[test]
+    fn only_armor_slots_are_written() {
+        let inventory = PlayerInventory::new(
+            Arc::new(std::sync::Mutex::new(
+                pumpkin_inventory::entity_equipment::EntityEquipment::default(),
+            )),
+            Arc::new(std::iter::empty().collect()),
+        );
+        let changes = [(EquipmentSlot::MAIN_HAND, ItemStack::new(1, &Item::DIAMOND))];
+        assert!(write_armor(&inventory, &changes).is_empty());
     }
 }

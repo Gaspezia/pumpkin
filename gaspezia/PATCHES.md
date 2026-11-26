@@ -45,6 +45,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 57 | Eclairage des cartes chargees : au relight, le ciel repart de 0 (comme un chunk genere) et non de 15 ; sous un toit opaque, la descente de colonne s'arretait au premier bloc opaque et laissait le 15 de l'amorce dessous. |
 | 58 | Eclairage : la lumiere du ciel se propage a l'interieur des chunks voisins (propagation sur tout le cache, plus sur la seule fenetre 18x18) ; plus de gel des cellules deja reclamees par une graine (reprend Pumpkin-MC#2733). |
 | 59 | Eclairage : la lumiere modifiee dans un chunk deja envoye (relight d'un voisin `Level`) est renvoyee aux joueurs qui le voient (`CLightUpdate`, chunk entier), comme `ChunkHolder.broadcastChanges` en vanilla ; depend du patch 58. |
+| 60 | Plugins WASM : l'armure posee par `set_helmet`/`set_chestplate`/`set_leggings`/`set_boots`/`set_armor_contents` (hote v0.2) est diffusee aux joueurs qui voient le porteur (`CSetEquipment`), comme le tick vanilla `detectEquipmentUpdates`. |
 | 37 | Combat PvP 1.8, lot 3 (L7, canne a peche) : lancer 1,5, gravite 0,04 puis trainee 0,92/0,5, accroche par un coup a 0 degat (recul et invulnerabilite), jamais de traction d'un joueur, flotteur retire si la canne n'est plus tenue | branche `gaspezia-patch/pvp18-rod` | aucune (propre au fork) | PR Gaspezia/pumpkin #39 | 2026-11-21 |
 | 36 | Combat PvP 1.8, lot 3 (L6, projectiles) : depart a l'oeil avec decalage lateral 0,16, imprecision gaussienne 0,0075, ordre deplacement-trainee-gravite des objets lances, fleche dans l'eau, marge de collision 0,3, tireur touchable apres 5 ticks, Frappe sans resistance, potion jetable | branche `gaspezia-patch/pvp18-projectiles` | aucune (propre au fork) | PR Gaspezia/pumpkin #38 | 2026-11-21 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
@@ -484,6 +485,16 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : relight seulement ; les changements en jeu (bloc pose ou casse) ne sont pas diffuses, le client recalcule la lumiere lui-meme (le TODO `world/mod.rs` reste, reformule). Envoi par chunk entier, une fois au chargement du voisin.
 - Depend du patch 58 (c'est lui qui rend le trou visible). Meme trou sur upstream/master (TODO `world/mod.rs:1994`).
 - Proposable upstream : oui, apres le patch 58.
+
+### Patch 60 : diffusion de l'armure posee par les plugins
+
+- Quoi : les setters d'armure de l'hote v0.2 (`pumpkin-wasm-host-v0_2/src/inventory.rs`) passent par `apply_armor` : ecriture dans l'inventaire, `CSetContainerSlot` au porteur, puis un seul `living_entity.send_equipment_changes` (un paquet groupe pour `set_armor_contents`, donc un seul `CSetEquipment` pour les 4 pieces). `clear_armor`/`clear_all` en profitent.
+- Pourquoi : ils ne faisaient que `set_slot` + paquet au porteur ; Pumpkin n'a pas `LivingEntity.detectEquipmentUpdates`, chaque chemin diffuse a la main. Les autres joueurs ne voyaient pas les armures des kits/achats ni les cosmetiques du lobby.
+- Choix : meme mecanisme que le clic d'inventaire et `sync_hand_slot` (`send_equipment_changes`, qui cible les joueurs suiveurs, pas le porteur : pas de doublon). Les mains passaient deja par `sync_hand_slot` (main active et main secondaire) : rien a changer. Pas de son d'equipement (`enqueue_equipment_change`), un plugin qui pose un kit ne doit pas le faire sonner.
+- Tests : `armor_broadcast_tests` (`inventory.rs`) sur le lot d'equipement et les emplacements ecrits. Pas de harnais `Player` dans le cœur : l'envoi reseau lui-meme n'est pas teste (limite).
+- Fichiers : `pumpkin-wasm-host-v0_2/src/inventory.rs`.
+- Meme trou sur upstream/master (`inventory.rs:1126` : aucun `send_equipment_changes`).
+- Proposable upstream : oui.
 
 ## CI du fork
 
