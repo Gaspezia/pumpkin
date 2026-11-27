@@ -433,13 +433,15 @@ impl TrackedEntity {
     }
 
     fn broadcast_to_player(&self, player: &Player) -> bool {
-        self.entity.get_player().is_none_or(|target_player| {
-            player_visible_to(
-                player.gamemode.load(),
-                target_player.gamemode.load(),
-                !player.can_see(&target_player.gameprofile.id),
-            )
-        })
+        let (uuid, target_mode) = self.entity.get_player().map_or_else(
+            || (self.entity.get_entity().entity_uuid, None),
+            |t| (t.gameprofile.id, Some(t.gamemode.load())),
+        );
+        player_visible_to(
+            player.gamemode.load(),
+            target_mode,
+            !player.can_see(&uuid),
+        )
     }
 
     pub fn update_player(&self, player: &Arc<Player>, _world: &World) {
@@ -1379,9 +1381,12 @@ impl EntityTracker {
 }
 
 /// Whether `observer` is shown a player: never one it hid (`hide-player`, Bukkit `hidePlayer`),
-/// and spectators are only visible to other spectators.
-const fn player_visible_to(observer: GameMode, target: GameMode, hidden: bool) -> bool {
-    !hidden && (matches!(observer, GameMode::Spectator) || !matches!(target, GameMode::Spectator))
+/// and spectators are only visible to other spectators. Any entity (`target: None` for a
+/// non-player) is also hidden by `hide-entity`.
+const fn player_visible_to(observer: GameMode, target: Option<GameMode>, hidden: bool) -> bool {
+    !hidden
+        && (matches!(observer, GameMode::Spectator)
+            || !matches!(target, Some(GameMode::Spectator)))
 }
 
 #[cfg(test)]
@@ -1392,27 +1397,36 @@ mod visibility_tests {
     fn spectators_are_seen_only_by_spectators() {
         assert!(player_visible_to(
             GameMode::Spectator,
-            GameMode::Spectator,
+            Some(GameMode::Spectator),
             false
         ));
         assert!(!player_visible_to(
             GameMode::Survival,
-            GameMode::Spectator,
+            Some(GameMode::Spectator),
             false
         ));
         assert!(player_visible_to(
             GameMode::Survival,
-            GameMode::Survival,
+            Some(GameMode::Survival),
             false
         ));
+    }
+
+    #[test]
+    fn a_hidden_non_player_entity_is_not_broadcast_until_shown() {
+        for observer in [GameMode::Survival, GameMode::Creative, GameMode::Spectator] {
+            assert!(!player_visible_to(observer, None, true));
+            assert!(player_visible_to(observer, None, false));
+        }
     }
 
     #[test]
     fn a_hidden_player_is_never_visible() {
         for observer in [GameMode::Survival, GameMode::Creative, GameMode::Spectator] {
             for target in [GameMode::Survival, GameMode::Spectator] {
-                assert!(!player_visible_to(observer, target, true));
+                assert!(!player_visible_to(observer, Some(target), true));
             }
+            assert!(!player_visible_to(observer, None, true));
         }
     }
 }

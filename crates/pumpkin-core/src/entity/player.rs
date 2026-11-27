@@ -4698,6 +4698,36 @@ impl Player {
         }
     }
 
+    /// Hides any entity from this player (Bukkit `hideEntity`): destroyed on this client and
+    /// kept out of `broadcast_to_player`, so it stays hidden across range and chunk changes.
+    /// No tab list entry is touched. The set lives on this player, so it is dropped with it.
+    pub fn hide_entity(&self, entity_id: i32, entity_uuid: uuid::Uuid) {
+        let newly_hidden = self
+            .hidden_players
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(entity_uuid);
+        if newly_hidden
+            && let Some(tracked) = self.world().entity_tracker.get_tracked_entity(entity_id)
+        {
+            tracked.remove_player(self);
+        }
+    }
+
+    /// Reverses [`Self::hide_entity`]; the entity is spawned again if in range.
+    pub fn show_entity(&self, entity_id: i32, entity_uuid: uuid::Uuid) {
+        self.hidden_players
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&entity_uuid);
+        let world = self.world();
+        if let Some(me) = world.get_player_by_id(self.entity_id())
+            && let Some(tracked) = world.entity_tracker.get_tracked_entity(entity_id)
+        {
+            tracked.update_player(&me, &world);
+        }
+    }
+
     pub fn can_see(&self, other_id: &uuid::Uuid) -> bool {
         !self
             .hidden_players
