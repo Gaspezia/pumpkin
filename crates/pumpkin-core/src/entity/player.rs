@@ -6212,7 +6212,7 @@ impl Player {
             return;
         }
 
-        let drop_amount = if drop_stack { item_stack.item_count } else { 1 };
+        let drop_amount = held_drop_amount(&item_stack, drop_stack);
         let dropped_stack = item_stack.copy_with_count(drop_amount);
 
         if let Some(server) = self.world().server.upgrade()
@@ -6226,6 +6226,12 @@ impl Player {
                 );
             server.plugin_manager.fire_blocking(&server, &mut event);
             if event.cancelled {
+                // Paper puts the item back and resyncs the slot: the client already
+                // removed the item locally when it sent the drop action.
+                self.sync_hand_slot(
+                    self.inventory.get_selected_slot() as usize,
+                    cancelled_drop_resync_stack(&item_stack),
+                );
                 return;
             }
         }
@@ -9874,6 +9880,16 @@ const fn may_attack(mode: GameMode) -> bool {
     !matches!(mode, GameMode::Spectator)
 }
 
+/// Amount removed from the held stack by a drop action: the whole stack (Ctrl+Q) or one item (Q).
+const fn held_drop_amount(held: &ItemStack, drop_stack: bool) -> u8 {
+    if drop_stack { held.item_count } else { 1 }
+}
+
+/// Stack the client must see in the held slot after a plugin cancelled the drop: the untouched one.
+fn cancelled_drop_resync_stack(held: &ItemStack) -> ItemStack {
+    held.clone()
+}
+
 #[cfg(test)]
 mod attack_gate_tests {
     use super::{GameMode, may_attack};
@@ -9883,6 +9899,24 @@ mod attack_gate_tests {
         assert!(!may_attack(GameMode::Spectator));
         for mode in [GameMode::Survival, GameMode::Creative, GameMode::Adventure] {
             assert!(may_attack(mode));
+        }
+    }
+}
+
+#[cfg(test)]
+mod cancelled_drop_tests {
+    use super::{ItemStack, cancelled_drop_resync_stack, held_drop_amount};
+    use pumpkin_data::item::Item;
+
+    #[test]
+    fn cancelled_drop_resyncs_the_full_untouched_stack() {
+        let held = ItemStack::new(16, &Item::COMPASS);
+        for drop_stack in [false, true] {
+            let amount = held_drop_amount(&held, drop_stack);
+            assert_eq!(amount, if drop_stack { 16 } else { 1 });
+            let resync = cancelled_drop_resync_stack(&held);
+            assert_eq!(resync.item_count, 16);
+            assert_eq!(resync.item.id, Item::COMPASS.id);
         }
     }
 }
