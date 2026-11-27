@@ -1304,6 +1304,12 @@ interface player {
         can-see: func(other: player) -> bool;
         /// Checks if this player can see another specified player.
         can-see-player: func(other: player) -> bool;
+        /// Hides any entity from this player (Bukkit `hideEntity`): destroyed on this client and
+        /// never spawned again (range, chunk change) until `show-entity`. Passengers are separate
+        /// entities and must be hidden one by one. Call `show-entity` when the entity is removed.
+        hide-entity: func(other: entity);
+        /// Reverses `hide-entity`; the entity is spawned again if in range.
+        show-entity: func(other: entity);
 
         /// Sets the tab list ping / latency indicator in milliseconds.
         set-tab-list-ping: func(latency-ms: s32);

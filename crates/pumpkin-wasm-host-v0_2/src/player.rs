@@ -2248,6 +2248,30 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         Ok(())
     }
 
+    fn hide_entity(
+        &mut self,
+        player: Resource<Player>,
+        other: Resource<crate::pumpkin::plugin::world::Entity>,
+    ) -> wasmtime::Result<()> {
+        let other = self.take(other)?;
+        let player = self.get(&player)?;
+        let e = other.get_entity();
+        player.hide_entity(e.entity_id, e.entity_uuid);
+        Ok(())
+    }
+
+    fn show_entity(
+        &mut self,
+        player: Resource<Player>,
+        other: Resource<crate::pumpkin::plugin::world::Entity>,
+    ) -> wasmtime::Result<()> {
+        let other = self.take(other)?;
+        let player = self.get(&player)?;
+        let e = other.get_entity();
+        player.show_entity(e.entity_id, e.entity_uuid);
+        Ok(())
+    }
+
     fn can_see(
         &mut self,
         player: Resource<Player>,

@@ -48,6 +48,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 60 | Plugins WASM : l'armure posee par `set_helmet`/`set_chestplate`/`set_leggings`/`set_boots`/`set_armor_contents` (hote v0.2) est diffusee aux joueurs qui voient le porteur (`CSetEquipment`), comme le tick vanilla `detectEquipmentUpdates`. |
 | 61 | Un plugin qui annule `PlayerDropItemEvent` (touche Q / Ctrl+Q) remet l'objet en place cote client : `sync_hand_slot` de l'emplacement tenu, comme Paper. |
 | 62 | Un objet jete depuis un menu ouvert (`THROW`, clic hors fenetre) declenche `PlayerDropItemEvent` ; si un plugin l'annule, la pile reste en place et la fenetre + le curseur sont resynchronises ; depend du patch 61. |
+| 63 | Plugins WASM : `hide-entity` / `show-entity` par joueur (hote v0.2, Bukkit `Player.hideEntity`/`showEntity`) pour toute entite, pas seulement les joueurs ; la visibilite tient quand l'entite sort puis rentre de portee. |
 | 64 | Jamais deux fois la creation d'un objectif de scoreboard ou d'une equipe vers un meme client : un `Add`/`Create` deja annonce devient `Update` (kick « Network Protocol Error », Gaspezia/Backlogs#220). |
 | 37 | Combat PvP 1.8, lot 3 (L7, canne a peche) : lancer 1,5, gravite 0,04 puis trainee 0,92/0,5, accroche par un coup a 0 degat (recul et invulnerabilite), jamais de traction d'un joueur, flotteur retire si la canne n'est plus tenue | branche `gaspezia-patch/pvp18-rod` | aucune (propre au fork) | PR Gaspezia/pumpkin #39 | 2026-11-21 |
 | 36 | Combat PvP 1.8, lot 3 (L6, projectiles) : depart a l'oeil avec decalage lateral 0,16, imprecision gaussienne 0,0075, ordre deplacement-trainee-gravite des objets lances, fleche dans l'eau, marge de collision 0,3, tireur touchable apres 5 ticks, Frappe sans resistance, potion jetable | branche `gaspezia-patch/pvp18-projectiles` | aucune (propre au fork) | PR Gaspezia/pumpkin #38 | 2026-11-21 |
@@ -520,6 +521,19 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : jet depuis l'inventaire creatif (`set_creative_slot.rs:59`) et chemin Bedrock sans evenement ; drops de debordement sans evenement ; Ctrl+Q sur un emplacement de resultat (craft) ou une armure maudite : quantite annoncee approximative (un evenement pour la pile prevue, pas un par `drop()` reel) ; le glisser hors fenetre ne jette rien ; course : l'etat de la fenetre peut changer entre la lecture initiale (copies, `slot_takable`) et la prise du verrou, l'evenement annonce alors le jet calcule sur l'etat lu avant ; Ctrl+Q sur un emplacement de resultat : un seul evenement pour une boucle qui peut jeter plusieurs resultats (non corrige).
 - Fichiers : `pumpkin-core/src/entity/player.rs`.
 - Upstream/master : meme trou (`screen_handler.rs:973-1062`, `drop_item` sans evenement).
+- Proposable upstream : oui.
+
+### Patch 63 : hide-entity / show-entity par joueur
+
+- Quoi : `hide-entity` / `show-entity` (`player.wit` v0.2, ajout seul) ; `Player::hide_entity` / `show_entity` (`pumpkin-core/src/entity/player.rs`) inserent / retirent l'uuid dans `hidden_players` (meme ensemble que `hide-player`), puis detruisent l'entite chez le client (`remove_player`) / la re-evaluent (`update_player`). Aucune entree de tab list touchee. `broadcast_to_player` (`entity_tracker.rs`) applique `can_see` a TOUTE entite (decision pure `player_visible_to`, `target: None` pour un non-joueur), donc l'entite cachee n'est pas re-spawnee a la rentree de portee, au changement de chunk ni a la teleportation ; la relecture sous le verrou d'ecriture (patch 30) couvre la course spawn/hide.
+- Pourquoi : la poudre du lobby doit cacher les montures 3D (mouton porteur + `item_display`), entites serveur diffusees a tous.
+- Nettoyage : l'ensemble vit sur le `Player` observateur, donc libere a sa deconnexion ; pour une entite morte, le plugin appelle `show-entity` (un uuid mort reste sinon dans l'ensemble jusqu'a la deconnexion).
+- Passagers : entites suivies a part, a cacher une par une ; cacher le porteur ne cache pas ses passagers (le client garde un passager orphelin a sa derniere position). Non etendu a la pile.
+- Evenement : `player-hide-entity-event` reste non declenche (aucun evenement plugin sous verrou).
+- Tests : `a_hidden_non_player_entity_is_not_broadcast_until_shown` et `a_hidden_player_is_hidden_by_profile_uuid` exercent `entity_visible_to`, la fonction que `broadcast_to_player` appelle seule ; rouges si un non-joueur ignore `hidden`. Pas de harnais `Player` : `hide_entity` / `show_entity`, `broadcast_to_player` (simple adaptateur) et l'hote ne sont pas testes.
+- Joueur vise : `hide_entity` / `show_entity` deleguent a `hide_player` / `show_player` (tab list). Chemin rapide : `Player::has_hidden` (maintenu sous le verrou) evite le verrou de `hidden_players` dans `can_see` quand rien n'est cache.
+- Fichiers : `pumpkin-core/src/entity/player.rs`, `pumpkin-core/src/world/entity_tracker.rs`, `pumpkin-plugin-wit/v0.2/player.wit`, `pumpkin-wasm-host-v0_2/src/player.rs`.
+- Upstream/master : meme trou (seul l'evenement `PlayerHideEntityEvent` est defini, jamais declenche ; ni `hide_entity` ni WIT).
 - Proposable upstream : oui.
 
 ### Patch 64 : pas de double creation d'objectif/equipe vers un client
