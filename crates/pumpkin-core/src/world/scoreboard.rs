@@ -85,44 +85,64 @@ fn send_objective_to_player<B: BClientPacket + Sync>(
     je: &CUpdateObjectives,
     be: &B,
 ) {
-    let mode = player
-        .scoreboard_announced
+    dispatch_objective(&player.scoreboard_announced, je, |p| {
+        player.try_enqueue_packet_editioned(p, be);
+    });
+}
+
+fn send_team_to_player(player: &Player, packet: &CSetPlayerTeam<'_>) {
+    dispatch_team(&player.scoreboard_announced, packet, |p| {
+        player.try_send_client_packet(p);
+    });
+}
+
+/// Decides what really goes to a client for an objective packet (a repeated `Add` becomes an
+/// `Update`) and hands it to `send`. The `Player` impls call exactly this.
+fn dispatch_objective(
+    announced: &std::sync::Mutex<Announced>,
+    je: &CUpdateObjectives,
+    send: impl FnOnce(&CUpdateObjectives),
+) {
+    let mode = announced
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .objective_mode(&je.objective_name, je.mode);
     if mode == je.mode {
-        player.try_enqueue_packet_editioned(je, be);
+        send(je);
     } else {
-        let fixed = CUpdateObjectives {
+        send(&CUpdateObjectives {
             objective_name: je.objective_name.clone(),
             mode,
             display_name: je.display_name.clone(),
             render_type: je.render_type,
             number_format: je.number_format.clone(),
-        };
-        player.try_enqueue_packet_editioned(&fixed, be);
+        });
     }
 }
 
-fn send_team_to_player(player: &Player, packet: &CSetPlayerTeam<'_>) {
-    let method = player
-        .scoreboard_announced
+/// Same for team packets: a repeated `Create` becomes `Update` then `AddPlayers`.
+fn dispatch_team(
+    announced: &std::sync::Mutex<Announced>,
+    packet: &CSetPlayerTeam<'_>,
+    mut send: impl FnMut(&CSetPlayerTeam<'_>),
+) {
+    let method = announced
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .team_method(&packet.team_name, packet.method);
     if method == packet.method {
-        player.try_send_client_packet(packet);
+        send(packet);
         return;
     }
     // Duplicate `Create`: update the options, then re-add the members.
-    player.try_send_client_packet(&CSetPlayerTeam {
+    send(&CSetPlayerTeam {
         team_name: packet.team_name.clone(),
         method,
         parameters: packet.parameters.clone(),
         players: Box::new([]),
     });
     if !packet.players.is_empty() {
-        player.try_send_client_packet(&CSetPlayerTeam {
+        send(&CSetPlayerTeam {
             team_name: packet.team_name.clone(),
             method: TeamMethod::AddPlayers,
             parameters: None,
@@ -1449,7 +1469,7 @@ impl BedrockScoreboardBuilder {
 mod tests {
     use super::*;
 
-    /// Mimics a client connection: applies the same dedup as `Player`, records what is sent.
+    /// Records what a client would get, through the same `dispatch_*` the `Player` impls use.
     #[derive(Default)]
     struct Client {
         announced: std::sync::Mutex<Announced>,
@@ -1460,26 +1480,22 @@ mod tests {
         fn send_editioned<J: ClientPacket + Sync, B: BClientPacket + Sync>(&self, _: &J, _: &B) {}
         fn send_je<J: ClientPacket + Sync>(&self, _: &J) {}
         fn send_objective<B: BClientPacket + Sync>(&self, je: &CUpdateObjectives, _: &B) {
-            let mode = self
-                .announced
-                .lock()
-                .unwrap()
-                .objective_mode(&je.objective_name, je.mode);
-            self.sent
-                .lock()
-                .unwrap()
-                .push(format!("obj {} {mode}", je.objective_name));
+            dispatch_objective(&self.announced, je, |p| {
+                self.sent
+                    .lock()
+                    .unwrap()
+                    .push(format!("obj {} {}", p.objective_name, p.mode));
+            });
         }
         fn send_team(&self, p: &CSetPlayerTeam<'_>) {
-            let m = self
-                .announced
-                .lock()
-                .unwrap()
-                .team_method(&p.team_name, p.method);
-            self.sent
-                .lock()
-                .unwrap()
-                .push(format!("team {} {}", p.team_name, m as u8));
+            dispatch_team(&self.announced, p, |p| {
+                self.sent.lock().unwrap().push(format!(
+                    "team {} {} [{}]",
+                    p.team_name,
+                    p.method as u8,
+                    p.players.join(",")
+                ));
+            });
         }
     }
 
@@ -1509,7 +1525,20 @@ mod tests {
         sb.add_team(&client, team(CollisionRule::Always, 0));
         sb.send_to_player(&client);
         let sent = client.sent.lock().unwrap().clone();
-        assert_eq!(sent, ["team t 0", "team t 2"]); // Create then Update
+        assert_eq!(sent, ["team t 0 []", "team t 2 []"]); // Create then Update
+    }
+
+    #[test]
+    fn duplicate_team_create_updates_then_re_adds_members() {
+        let client = Client::default();
+        let mut sb = Scoreboard::new();
+        let mut t = team(CollisionRule::Always, 0);
+        t.players = vec!["a".to_string(), "b".to_string()];
+        sb.add_team(&client, t);
+        sb.send_to_player(&client);
+        let sent = client.sent.lock().unwrap().clone();
+        // Create(members), then Update, then AddPlayers (method 3) with the members.
+        assert_eq!(sent, ["team t 0 [a,b]", "team t 2 []", "team t 3 [a,b]"]);
     }
 
     #[test]
