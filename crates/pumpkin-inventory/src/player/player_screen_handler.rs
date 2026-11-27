@@ -286,22 +286,13 @@ mod tests {
     struct TestPlayer {
         inventory: Arc<PlayerInventory>,
         creative: bool,
-        cancel_drops: bool,
-        dropped: Mutex<Vec<u8>>,
-        events: Mutex<Vec<u8>>,
     }
 
     impl InventoryPlayer for TestPlayer {
         fn as_any(&self) -> &dyn Any {
             self
         }
-        fn drop_item(&self, item: ItemStack, _retain_ownership: bool) {
-            self.dropped.lock().unwrap().push(item.item_count);
-        }
-        fn drop_cancelled_by_plugin(&self, item: &ItemStack) -> bool {
-            self.events.lock().unwrap().push(item.item_count);
-            self.cancel_drops
-        }
+        fn drop_item(&self, _item: ItemStack, _retain_ownership: bool) {}
         fn get_inventory(&self) -> Arc<PlayerInventory> {
             self.inventory.clone()
         }
@@ -340,9 +331,6 @@ mod tests {
         let player = TestPlayer {
             inventory: inv,
             creative,
-            cancel_drops: false,
-            dropped: Mutex::new(Vec::new()),
-            events: Mutex::new(Vec::new()),
         };
         (handler, player)
     }
@@ -380,9 +368,6 @@ mod tests {
         let creative_player = TestPlayer {
             inventory: survival_player.inventory,
             creative: true,
-            cancel_drops: false,
-            dropped: Mutex::new(Vec::new()),
-            events: Mutex::new(Vec::new()),
         };
         handler.on_slot_click(5, 0, SlotActionType::QuickMove, &creative_player);
         assert!(handler.get_slot(5).get_stack().is_empty());
@@ -435,62 +420,24 @@ mod tests {
         assert_eq!(handler.get_slot(13).get_stack().item_count, 1);
     }
 
-    fn cursor_count(handler: &PlayerScreenHandler) -> u8 {
-        handler
-            .get_behaviour()
-            .cursor_stack
-            .lock()
-            .unwrap()
-            .item_count
-    }
-
-    /// Throws from slot 36 (Q / Ctrl+Q) and outside the window (left / right click), with
-    /// a plugin that cancels or not.
+    /// A cancelled throw ends in `cancel()` (called by `Player::on_slot_click`): it must request
+    /// a full resync, which bumps the revision, and leave the stack untouched.
     #[test]
-    fn inventory_throw_fires_drop_event_and_cancel_restores_stack() {
-        for cancel in [true, false] {
-            let (mut handler, mut player) = make_handler(false);
-            player.cancel_drops = cancel;
-            handler
-                .get_slot(36)
-                .set_stack(ItemStack::new(16, &Item::COMPASS));
-
-            // Q then Ctrl+Q on the slot.
-            handler.on_slot_click(36, 0, SlotActionType::Throw, &player);
-            let after_q = handler.get_slot(36).get_stack().item_count;
-            handler.on_slot_click(36, 1, SlotActionType::Throw, &player);
-            let after_ctrl_q = handler.get_slot(36).get_stack().item_count;
-            assert_eq!(
-                *player.events.lock().unwrap(),
-                vec![1, if cancel { 16 } else { 15 }]
-            );
-            if cancel {
-                assert_eq!((after_q, after_ctrl_q), (16, 16));
-                assert!(player.dropped.lock().unwrap().is_empty());
-            } else {
-                assert_eq!((after_q, after_ctrl_q), (15, 0));
-                assert_eq!(*player.dropped.lock().unwrap(), vec![1, 15]);
-            }
-
-            // Cursor thrown outside the window: right click (one), then left click (all).
-            handler.get_slot(36).set_stack(ItemStack::EMPTY.clone());
-            *handler.get_behaviour().cursor_stack.lock().unwrap() =
-                ItemStack::new(8, &Item::COMPASS);
-            player.events.lock().unwrap().clear();
-            player.dropped.lock().unwrap().clear();
-            handler.on_slot_click(-999, 1, SlotActionType::Pickup, &player);
-            let after_right = cursor_count(&handler);
-            handler.on_slot_click(-999, 0, SlotActionType::Pickup, &player);
-            let after_left = cursor_count(&handler);
-            if cancel {
-                assert_eq!(*player.events.lock().unwrap(), vec![1, 8]);
-                assert_eq!((after_right, after_left), (8, 8));
-                assert!(player.dropped.lock().unwrap().is_empty());
-            } else {
-                assert_eq!(*player.events.lock().unwrap(), vec![1, 7]);
-                assert_eq!((after_right, after_left), (7, 0));
-                assert_eq!(*player.dropped.lock().unwrap(), vec![1, 7]);
-            }
-        }
+    fn cancelled_throw_resync_bumps_revision_and_keeps_stack() {
+        let (mut handler, _player) = make_handler(false);
+        handler
+            .get_slot(36)
+            .set_stack(ItemStack::new(16, &Item::COMPASS));
+        let before = handler
+            .get_behaviour()
+            .revision
+            .load(std::sync::atomic::Ordering::Relaxed);
+        handler.cancel();
+        let after = handler
+            .get_behaviour()
+            .revision
+            .load(std::sync::atomic::Ordering::Relaxed);
+        assert_ne!(before, after);
+        assert_eq!(handler.get_slot(36).get_stack().item_count, 16);
     }
 }

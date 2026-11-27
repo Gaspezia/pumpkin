@@ -6229,15 +6229,16 @@ impl Player {
             return;
         }
 
-        let drop_amount = held_drop_amount(&item_stack, drop_stack);
+        let drop_amount = if drop_stack { item_stack.item_count } else { 1 };
         let dropped_stack = item_stack.copy_with_count(drop_amount);
 
         if self.drop_event_cancelled(&dropped_stack) {
             // Paper puts the item back and resyncs the slot: the client already
-            // removed the item locally when it sent the drop action.
+            // removed the item locally when it sent the drop action. Re-read the
+            // slot: a handler may have replaced the held item while cancelling.
             self.sync_hand_slot(
                 self.inventory.get_selected_slot() as usize,
-                cancelled_drop_resync_stack(&item_stack),
+                self.inventory().held_item(),
             );
             return;
         }
@@ -7393,7 +7394,7 @@ impl Player {
                 slot,
                 raw_slot,
                 clicked_item.clone(),
-                cursor_item,
+                cursor_item.clone(),
                 i32::from(hotbar_button),
             );
             'after: {}
@@ -7538,6 +7539,21 @@ impl Player {
                 cancel_screen();
                 return;
             }
+        }
+
+        // Fired before any inventory lock is taken: a plugin handler may call back into the
+        // inventory host functions, which take the screen handler lock.
+        if let Some(thrown) = planned_container_throw(
+            &packet.mode,
+            packet.slot,
+            packet.button,
+            clicked_item.as_ref(),
+            cursor_item.as_ref(),
+        ) && self.drop_event_cancelled(&thrown)
+        {
+            // The client already removed the item locally: resync window and cursor.
+            cancel_screen();
+            return;
         }
 
         let screen_handler_arc = self
@@ -9072,10 +9088,6 @@ impl InventoryPlayer for Player {
         self.drop_item(item);
     }
 
-    fn drop_cancelled_by_plugin(&self, item: &ItemStack) -> bool {
-        self.drop_event_cancelled(item)
-    }
-
     fn has_infinite_materials(&self) -> bool {
         self.gamemode.load() == GameMode::Creative
     }
@@ -9890,14 +9902,26 @@ const fn may_attack(mode: GameMode) -> bool {
     !matches!(mode, GameMode::Spectator)
 }
 
-/// Amount removed from the held stack by a drop action: the whole stack (Ctrl+Q) or one item (Q).
-const fn held_drop_amount(held: &ItemStack, drop_stack: bool) -> u8 {
-    if drop_stack { held.item_count } else { 1 }
-}
-
-/// Stack the client must see in the held slot after a plugin cancelled the drop: the untouched one.
-fn cancelled_drop_resync_stack(held: &ItemStack) -> ItemStack {
-    held.clone()
+/// Stack a click packet would throw out of an open container, if any: slot `THROW` (Q = 1,
+/// Ctrl+Q = whole stack) or a click outside the window (-999) holding a cursor item (left = all,
+/// right = one).
+fn planned_container_throw(
+    mode: &SlotActionType,
+    slot: i16,
+    button: i8,
+    clicked: Option<&ItemStack>,
+    cursor: Option<&ItemStack>,
+) -> Option<ItemStack> {
+    let (stack, whole) = match mode {
+        SlotActionType::Throw if slot >= 0 => (clicked?, button == 1),
+        SlotActionType::Pickup | SlotActionType::QuickMove
+            if slot == -999 && (button == 0 || button == 1) =>
+        {
+            (cursor?, button == 0)
+        }
+        _ => return None,
+    };
+    (!stack.is_empty()).then(|| stack.copy_with_count(if whole { stack.item_count } else { 1 }))
 }
 
 #[cfg(test)]
@@ -9914,19 +9938,25 @@ mod attack_gate_tests {
 }
 
 #[cfg(test)]
-mod cancelled_drop_tests {
-    use super::{ItemStack, cancelled_drop_resync_stack, held_drop_amount};
+mod container_throw_tests {
+    use super::{ItemStack, SlotActionType, planned_container_throw};
     use pumpkin_data::item::Item;
 
     #[test]
-    fn cancelled_drop_resyncs_the_full_untouched_stack() {
-        let held = ItemStack::new(16, &Item::COMPASS);
-        for drop_stack in [false, true] {
-            let amount = held_drop_amount(&held, drop_stack);
-            assert_eq!(amount, if drop_stack { 16 } else { 1 });
-            let resync = cancelled_drop_resync_stack(&held);
-            assert_eq!(resync.item_count, 16);
-            assert_eq!(resync.item.id, Item::COMPASS.id);
-        }
+    fn plans_the_stack_thrown_from_an_open_container() {
+        let s = ItemStack::new(16, &Item::COMPASS);
+        let n = |m, slot, b, c: Option<&ItemStack>, cur: Option<&ItemStack>| {
+            planned_container_throw(&m, slot, b, c, cur).map(|t| t.item_count)
+        };
+        assert_eq!(n(SlotActionType::Throw, 36, 0, Some(&s), None), Some(1));
+        assert_eq!(n(SlotActionType::Throw, 36, 1, Some(&s), None), Some(16));
+        assert_eq!(n(SlotActionType::Pickup, -999, 0, None, Some(&s)), Some(16));
+        assert_eq!(n(SlotActionType::Pickup, -999, 1, None, Some(&s)), Some(1));
+        assert_eq!(n(SlotActionType::Pickup, 5, 0, Some(&s), Some(&s)), None);
+        assert_eq!(n(SlotActionType::Pickup, -999, 0, None, None), None);
+        assert_eq!(
+            n(SlotActionType::Throw, 36, 0, Some(ItemStack::EMPTY), None),
+            None
+        );
     }
 }

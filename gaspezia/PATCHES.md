@@ -502,22 +502,23 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 
 - Quoi : `Player::drop_held_item` (`pumpkin-core/src/entity/player.rs`), appele par `player_action.rs:265/268` (Q, Ctrl+Q) et le chemin Bedrock, appelle `sync_hand_slot(slot tenu, pile intacte)` quand l'evenement est annule, au lieu d'un simple `return`.
 - Pourquoi : le client retire l'objet localement en envoyant l'action de drop ; sans resynchronisation il restait invisible jusqu'au prochain rafraichissement. Boussole du lobby, kits Arena et BedWars annulent tous ce drop. Cote serveur l'objet n'est retire qu'apres l'evenement : rien a restaurer.
-- Choix : meme mecanisme que le clic d'inventaire refuse (`sync_hand_slot` : `CSetPlayerInventory`, contenus du handler, equipement diffuse). La decision vit dans deux petites fonctions pures (`held_drop_amount`, `cancelled_drop_resync_stack`).
+- Choix : meme mecanisme que le clic d'inventaire refuse (`sync_hand_slot` : `CSetPlayerInventory`, contenus du handler, equipement diffuse). La pile renvoyee au client est relue apres l'evenement (un handler peut avoir remplace l'objet).
 - Limite : le drop depuis l'inventaire ouvert (clic hors fenetre, `THROW`) passe par `InventoryPlayer::drop_item` sans declencher `PlayerDropItemEvent` : il n'est donc pas annulable aujourd'hui (trou distinct, non traite ici).
-- Tests : `cancelled_drop_tests` (rouge si la pile resynchronisee est vide, vert apres). Pas de harnais `Player` : l'envoi du paquet lui-meme n'est pas teste (limite).
+- Tests : aucun (pas de harnais `Player` ; le test precedent, tautologique, a ete retire). Le patch repose sur la relecture du code et un test en jeu.
 - Fichiers : `pumpkin-core/src/entity/player.rs`.
 - Meme trou sur upstream/master (`player.rs:6347`, `return` sans resync).
 - Proposable upstream : oui.
 
 ### Patch 62 : jet depuis un menu ouvert, evenement de drop annulable
 
-- Quoi : `ScreenHandler::internal_on_slot_click` (`pumpkin-inventory/src/screen_handler.rs`) appelle le nouveau `InventoryPlayer::drop_cancelled_by_plugin` avant le `THROW` d'un emplacement (Q = 1, Ctrl+Q = pile) et avant le clic gauche/droit hors fenetre avec un objet au curseur (pile ou 1). `Player` l'implemente via `drop_event_cancelled` (`pumpkin-core/src/entity/player.rs`), factorise avec `drop_held_item`. Annule : rien n'est retire, puis `sync_state()` (contenu + curseur), le mecanisme du clic refuse.
-- Pourquoi : ces chemins appelaient `drop_item` sans evenement : la boussole du lobby et les objets de kit pouvaient etre jetes depuis l'inventaire ouvert.
-- Dependance : patch 61 (PR #65, meme zone, branche basee dessus) ; la PR inclut son diff tant que #65 n'est pas mergee.
-- Tests : `inventory_throw_fires_drop_event_and_cancel_restores_stack` sur le vrai `PlayerScreenHandler` avec un joueur factice qui annule ou non (rouge sans l'appel, verifie par mutation).
-- Limites : le glisser hors fenetre (`QuickCraft`) ne jette rien dans ce code, donc non concerne ; le chemin Bedrock (`inventory_action.rs`) et les drops de debordement (inventaire plein) restent sans evenement ; `Player::drop_cancelled_by_plugin` lui-meme (evenement reel) n'est pas teste faute de harnais `Player`.
-- Fichiers : `pumpkin-inventory/src/screen_handler.rs`, `pumpkin-core/src/entity/player.rs`.
-- Upstream/master : meme trou (`screen_handler.rs:973-1062`, `drop_item` sans evenement ; aucun `PlayerDropItemEvent` dans `pumpkin-inventory`).
+- Quoi : `Player::on_slot_click` (`pumpkin-core/src/entity/player.rs`) calcule le jet prevu (`planned_container_throw` : `THROW` d'un emplacement Q = 1 / Ctrl+Q = pile, clic gauche/droit hors fenetre avec un objet au curseur = pile / 1) a partir des copies `clicked_item` et `cursor_item`, puis declenche `PlayerDropItemEvent` (`drop_event_cancelled`, partage avec `drop_held_item`) AVANT de prendre le verrou du screen handler, comme `InventoryClickEvent`. Annule : `cancel_screen()` puis `return` (contenu + curseur resynchronises, rien n'est retire).
+- Pourquoi : ces chemins appelaient `drop_item` sans evenement. Declencher l'evenement sous le verrou du screen handler (premiere version) pouvait provoquer un interblocage avec les fonctions hote qui prennent ce verrou (`close_inventory`, `get_cursor_item`...), d'ou ce point de declenchement.
+- Dependance : patch 61 (PR #65, meme zone) ; la PR #66 embarque son diff.
+- Tests : `container_throw_tests` (decision du jet prevu, rouge si Q/Ctrl+Q sont inverses) et `cancelled_throw_resync_bumps_revision_and_keeps_stack` (`cancel()` demande la resynchronisation). L'appel dans `on_slot_click` lui-meme n'est pas teste (pas de harnais `Player`).
+- Ecart avec Paper : un jet annule laisse l'objet en place (coffre, curseur) ; Paper le remet dans l'inventaire du joueur (`addItem`). Le fork fait mieux.
+- Limites : jet depuis l'inventaire creatif (`set_creative_slot.rs:59`) et chemin Bedrock sans evenement ; drops de debordement sans evenement ; Ctrl+Q sur un emplacement de resultat (craft) ou une armure maudite : quantite annoncee approximative (un evenement pour la pile prevue, pas un par `drop()` reel) ; le glisser hors fenetre ne jette rien.
+- Fichiers : `pumpkin-core/src/entity/player.rs`.
+- Upstream/master : meme trou (`screen_handler.rs:973-1062`, `drop_item` sans evenement).
 - Proposable upstream : oui.
 
 ## CI du fork
