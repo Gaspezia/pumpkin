@@ -27,6 +27,128 @@ pub trait ScoreboardTarget: Send + Sync {
         be_packet: &B,
     );
     fn send_je<J: ClientPacket + Sync>(&self, je_packet: &J);
+
+    /// Sends an objective packet. Real clients never get a second `Add` for a
+    /// name they already know (it would be a client-side protocol error).
+    fn send_objective<B: BClientPacket + Sync>(
+        &self,
+        je_packet: &CUpdateObjectives,
+        be_packet: &B,
+    ) {
+        self.send_editioned(je_packet, be_packet);
+    }
+
+    /// Same as [`Self::send_objective`] for team packets.
+    fn send_team(&self, packet: &CSetPlayerTeam<'_>) {
+        self.send_je(packet);
+    }
+}
+
+/// Objective and team names a client has already been told about.
+///
+/// Vanilla never sends the creation of the same objective/team twice to a
+/// client; a duplicate makes the client throw and the player gets kicked.
+#[derive(Debug, Default)]
+pub struct Announced {
+    objectives: std::collections::HashSet<String>,
+    teams: std::collections::HashSet<String>,
+}
+
+impl Announced {
+    /// Returns the objective mode to really send: a repeated `Add` becomes an `Update`.
+    pub fn objective_mode(&mut self, name: &str, mode: u8) -> u8 {
+        if mode == Mode::Add as u8 {
+            if !self.objectives.insert(name.to_string()) {
+                return Mode::Update as u8;
+            }
+        } else if mode == Mode::Remove as u8 {
+            self.objectives.remove(name);
+        }
+        mode
+    }
+
+    /// Returns the team method to really send: a repeated `Create` becomes an `Update`.
+    pub fn team_method(&mut self, name: &str, method: TeamMethod) -> TeamMethod {
+        match method {
+            TeamMethod::Create if !self.teams.insert(name.to_string()) => TeamMethod::Update,
+            TeamMethod::Remove => {
+                self.teams.remove(name);
+                method
+            }
+            _ => method,
+        }
+    }
+}
+
+fn send_objective_to_player<B: BClientPacket + Sync>(
+    player: &Player,
+    je: &CUpdateObjectives,
+    be: &B,
+) {
+    dispatch_objective(&player.scoreboard_announced, je, |p| {
+        player.try_enqueue_packet_editioned(p, be);
+    });
+}
+
+fn send_team_to_player(player: &Player, packet: &CSetPlayerTeam<'_>) {
+    dispatch_team(&player.scoreboard_announced, packet, |p| {
+        player.try_send_client_packet(p);
+    });
+}
+
+/// Decides what really goes to a client for an objective packet (a repeated `Add` becomes an
+/// `Update`) and hands it to `send`. The `Player` impls call exactly this.
+fn dispatch_objective(
+    announced: &std::sync::Mutex<Announced>,
+    je: &CUpdateObjectives,
+    send: impl FnOnce(&CUpdateObjectives),
+) {
+    let mode = announced
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .objective_mode(&je.objective_name, je.mode);
+    if mode == je.mode {
+        send(je);
+    } else {
+        send(&CUpdateObjectives {
+            objective_name: je.objective_name.clone(),
+            mode,
+            display_name: je.display_name.clone(),
+            render_type: je.render_type,
+            number_format: je.number_format.clone(),
+        });
+    }
+}
+
+/// Same for team packets: a repeated `Create` becomes `Update` then `AddPlayers`.
+fn dispatch_team(
+    announced: &std::sync::Mutex<Announced>,
+    packet: &CSetPlayerTeam<'_>,
+    mut send: impl FnMut(&CSetPlayerTeam<'_>),
+) {
+    let method = announced
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .team_method(&packet.team_name, packet.method);
+    if method == packet.method {
+        send(packet);
+        return;
+    }
+    // Duplicate `Create`: update the options, then re-add the members.
+    send(&CSetPlayerTeam {
+        team_name: packet.team_name.clone(),
+        method,
+        parameters: packet.parameters.clone(),
+        players: Box::new([]),
+    });
+    if !packet.players.is_empty() {
+        send(&CSetPlayerTeam {
+            team_name: packet.team_name.clone(),
+            method: TeamMethod::AddPlayers,
+            parameters: None,
+            players: packet.players.clone(),
+        });
+    }
 }
 
 impl ScoreboardTarget for World {
@@ -40,6 +162,22 @@ impl ScoreboardTarget for World {
 
     fn send_je<J: ClientPacket + Sync>(&self, je_packet: &J) {
         self.broadcast_packet_all(je_packet);
+    }
+
+    fn send_objective<B: BClientPacket + Sync>(
+        &self,
+        je_packet: &CUpdateObjectives,
+        be_packet: &B,
+    ) {
+        for player in self.players.load().iter() {
+            send_objective_to_player(player, je_packet, be_packet);
+        }
+    }
+
+    fn send_team(&self, packet: &CSetPlayerTeam<'_>) {
+        for player in self.players.load().iter() {
+            send_team_to_player(player, packet);
+        }
     }
 }
 
@@ -55,6 +193,18 @@ impl<T: ScoreboardTarget + ?Sized> ScoreboardTarget for &T {
     fn send_je<J: ClientPacket + Sync>(&self, je_packet: &J) {
         (*self).send_je(je_packet);
     }
+
+    fn send_objective<B: BClientPacket + Sync>(
+        &self,
+        je_packet: &CUpdateObjectives,
+        be_packet: &B,
+    ) {
+        (**self).send_objective(je_packet, be_packet);
+    }
+
+    fn send_team(&self, packet: &CSetPlayerTeam<'_>) {
+        (**self).send_team(packet);
+    }
 }
 
 impl ScoreboardTarget for std::sync::Arc<World> {
@@ -68,6 +218,18 @@ impl ScoreboardTarget for std::sync::Arc<World> {
 
     fn send_je<J: ClientPacket + Sync>(&self, je_packet: &J) {
         self.broadcast_packet_all(je_packet);
+    }
+
+    fn send_objective<B: BClientPacket + Sync>(
+        &self,
+        je_packet: &CUpdateObjectives,
+        be_packet: &B,
+    ) {
+        (**self).send_objective(je_packet, be_packet);
+    }
+
+    fn send_team(&self, packet: &CSetPlayerTeam<'_>) {
+        (**self).send_team(packet);
     }
 }
 
@@ -83,6 +245,18 @@ impl ScoreboardTarget for Player {
     fn send_je<J: ClientPacket + Sync>(&self, je_packet: &J) {
         self.try_send_client_packet(je_packet);
     }
+
+    fn send_objective<B: BClientPacket + Sync>(
+        &self,
+        je_packet: &CUpdateObjectives,
+        be_packet: &B,
+    ) {
+        send_objective_to_player(self, je_packet, be_packet);
+    }
+
+    fn send_team(&self, packet: &CSetPlayerTeam<'_>) {
+        send_team_to_player(self, packet);
+    }
 }
 
 impl ScoreboardTarget for std::sync::Arc<Player> {
@@ -96,6 +270,18 @@ impl ScoreboardTarget for std::sync::Arc<Player> {
 
     fn send_je<J: ClientPacket + Sync>(&self, je_packet: &J) {
         self.try_send_client_packet(je_packet);
+    }
+
+    fn send_objective<B: BClientPacket + Sync>(
+        &self,
+        je_packet: &CUpdateObjectives,
+        be_packet: &B,
+    ) {
+        send_objective_to_player(self, je_packet, be_packet);
+    }
+
+    fn send_team(&self, packet: &CSetPlayerTeam<'_>) {
+        send_team_to_player(self, packet);
     }
 }
 
@@ -235,7 +421,7 @@ impl Scoreboard {
             sort_order: VarInt(0),
         };
 
-        target.send_editioned(&je_update, &be_update);
+        target.send_objective(&je_update, &be_update);
 
         self.objectives.insert(objective.name.clone(), objective);
     }
@@ -269,7 +455,7 @@ impl Scoreboard {
             sort_order: VarInt(0),
         };
 
-        target.send_editioned(&je_update, &be_update);
+        target.send_objective(&je_update, &be_update);
 
         self.objectives.insert(objective.name.clone(), objective);
     }
@@ -342,7 +528,7 @@ impl Scoreboard {
             objective_name: name.to_string(),
         };
 
-        target.send_editioned(&je_packet, &be_packet);
+        target.send_objective(&je_packet, &be_packet);
 
         self.objectives.remove(name);
         self.scores.remove(name);
@@ -494,7 +680,7 @@ impl Scoreboard {
             player_suffix: &team.player_suffix,
         };
 
-        target.send_je(&CSetPlayerTeam {
+        target.send_team(&CSetPlayerTeam {
             team_name: team.name.clone(),
             method: TeamMethod::Create,
             parameters: Some(parameters),
@@ -526,7 +712,7 @@ impl Scoreboard {
             player_suffix: &team.player_suffix,
         };
 
-        target.send_je(&CSetPlayerTeam {
+        target.send_team(&CSetPlayerTeam {
             team_name: team.name.clone(),
             method: TeamMethod::Update,
             parameters: Some(parameters),
@@ -542,7 +728,7 @@ impl Scoreboard {
             return;
         }
 
-        target.send_je(&CSetPlayerTeam {
+        target.send_team(&CSetPlayerTeam {
             team_name: name.to_string(),
             method: TeamMethod::Remove,
             parameters: None,
@@ -632,7 +818,7 @@ impl Scoreboard {
         team.players.clear();
     }
 
-    pub fn send_to_player(&self, player: &Player) {
+    pub fn send_to_player(&self, player: &impl ScoreboardTarget) {
         for objective in self.objectives.values() {
             let je_update = CUpdateObjectives::new(
                 objective.name.clone(),
@@ -648,7 +834,7 @@ impl Scoreboard {
                 criteria_name: "dummy".to_string(),
                 sort_order: VarInt(0),
             };
-            player.try_enqueue_packet_editioned(&je_update, &be_update);
+            player.send_objective(&je_update, &be_update);
         }
 
         for (slot, objective_name) in &self.display_slots {
@@ -669,7 +855,7 @@ impl Scoreboard {
                 criteria_name: "dummy".to_string(),
                 sort_order: VarInt(0),
             };
-            player.try_enqueue_packet_editioned(&je_display, &be_display);
+            player.send_editioned(&je_display, &be_display);
         }
 
         for objective_scores in self.scores.values() {
@@ -692,7 +878,7 @@ impl Scoreboard {
                         custom_name: score.entity_name.clone(),
                     }],
                 };
-                player.try_enqueue_packet_editioned(&je_packet, &be_packet);
+                player.send_editioned(&je_packet, &be_packet);
             }
         }
 
@@ -712,7 +898,7 @@ impl Scoreboard {
                 parameters: Some(parameters),
                 players: team.players.clone().into(),
             };
-            player.try_send_client_packet(&je_packet);
+            player.send_team(&je_packet);
         }
     }
 }
@@ -1282,6 +1468,90 @@ impl BedrockScoreboardBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Records what a client would get, through the same `dispatch_*` the `Player` impls use.
+    #[derive(Default)]
+    struct Client {
+        announced: std::sync::Mutex<Announced>,
+        sent: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl ScoreboardTarget for Client {
+        fn send_editioned<J: ClientPacket + Sync, B: BClientPacket + Sync>(&self, _: &J, _: &B) {}
+        fn send_je<J: ClientPacket + Sync>(&self, _: &J) {}
+        fn send_objective<B: BClientPacket + Sync>(&self, je: &CUpdateObjectives, _: &B) {
+            dispatch_objective(&self.announced, je, |p| {
+                self.sent
+                    .lock()
+                    .unwrap()
+                    .push(format!("obj {} {}", p.objective_name, p.mode));
+            });
+        }
+        fn send_team(&self, p: &CSetPlayerTeam<'_>) {
+            dispatch_team(&self.announced, p, |p| {
+                self.sent.lock().unwrap().push(format!(
+                    "team {} {} [{}]",
+                    p.team_name,
+                    p.method as u8,
+                    p.players.join(",")
+                ));
+            });
+        }
+    }
+
+    #[test]
+    fn plugin_add_then_send_to_player_sends_one_objective_add() {
+        let client = Client::default();
+        let mut sb = Scoreboard::new();
+        sb.add_objective(
+            &client,
+            ScoreboardObjective::new(
+                "sb",
+                TextComponent::text("sb"),
+                RenderType::Integer,
+                None,
+                "dummy",
+            ),
+        );
+        sb.send_to_player(&client);
+        let sent = client.sent.lock().unwrap().clone();
+        assert_eq!(sent, ["obj sb 0", "obj sb 2"]); // Add then Update, never Add twice
+    }
+
+    #[test]
+    fn plugin_team_then_send_to_player_sends_one_team_create() {
+        let client = Client::default();
+        let mut sb = Scoreboard::new();
+        sb.add_team(&client, team(CollisionRule::Always, 0));
+        sb.send_to_player(&client);
+        let sent = client.sent.lock().unwrap().clone();
+        assert_eq!(sent, ["team t 0 []", "team t 2 []"]); // Create then Update
+    }
+
+    #[test]
+    fn duplicate_team_create_updates_then_re_adds_members() {
+        let client = Client::default();
+        let mut sb = Scoreboard::new();
+        let mut t = team(CollisionRule::Always, 0);
+        t.players = vec!["a".to_string(), "b".to_string()];
+        sb.add_team(&client, t);
+        sb.send_to_player(&client);
+        let sent = client.sent.lock().unwrap().clone();
+        // Create(members), then Update, then AddPlayers (method 3) with the members.
+        assert_eq!(sent, ["team t 0 [a,b]", "team t 2 []", "team t 3 [a,b]"]);
+    }
+
+    #[test]
+    fn removed_names_can_be_announced_again() {
+        let mut a = Announced::default();
+        assert_eq!(a.objective_mode("o", 0), 0);
+        assert_eq!(a.objective_mode("o", 0), 2);
+        assert_eq!(a.objective_mode("o", 1), 1);
+        assert_eq!(a.objective_mode("o", 0), 0);
+        assert_eq!(a.team_method("t", TeamMethod::Create), TeamMethod::Create);
+        assert_eq!(a.team_method("t", TeamMethod::Remove), TeamMethod::Remove);
+        assert_eq!(a.team_method("t", TeamMethod::Create), TeamMethod::Create);
+    }
 
     fn team(collision_rule: CollisionRule, options: i8) -> Team {
         Team {

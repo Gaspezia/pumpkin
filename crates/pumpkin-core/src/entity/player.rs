@@ -728,9 +728,14 @@ pub struct Player {
     pub per_player_time: AtomicCell<Option<(u64, bool)>>,
     pub per_player_weather: AtomicCell<Option<PlayerWeather>>,
     pub custom_scoreboard: std::sync::Mutex<Option<CustomScoreboard>>,
+    /// Objectives/teams this client already knows (survives respawn and world changes, like the vanilla client scoreboard).
+    pub scoreboard_announced: std::sync::Mutex<crate::world::scoreboard::Announced>,
     pub compass_target: AtomicCell<Option<pumpkin_util::math::position::BlockPos>>,
     pub respawn_location: AtomicCell<Option<pumpkin_util::math::position::BlockPos>>,
     pub hidden_players: Mutex<std::collections::HashSet<uuid::Uuid>>,
+    /// `!hidden_players.is_empty()`, kept under that lock: lets `can_see` skip the lock on the
+    /// tracker hot path when nothing is hidden.
+    pub has_hidden: AtomicBool,
     pub advancements: Arc<Mutex<PlayerAdvancement>>,
     pub enchantment_seed: AtomicI32,
     /// Ticks spent gliding, vanilla `fallFlyTicks`
@@ -1074,9 +1079,11 @@ impl Player {
             per_player_time: AtomicCell::new(None),
             per_player_weather: AtomicCell::new(None),
             custom_scoreboard: std::sync::Mutex::new(None),
+            scoreboard_announced: std::sync::Mutex::default(),
             compass_target: AtomicCell::new(None),
             respawn_location: AtomicCell::new(None),
             hidden_players: Mutex::new(std::collections::HashSet::new()),
+            has_hidden: AtomicBool::new(false),
             fishing_bobber: AtomicI32::new(-1),
             bedrock_skin: ArcSwap::new(Arc::new(bedrock_skin)),
             seen_credits: AtomicBool::new(false),
@@ -4658,12 +4665,7 @@ impl Player {
     /// Hides `other_id` from this player (Bukkit `hidePlayer`): its entity is destroyed on this
     /// client, never spawned again while hidden, and its tab list entry is removed.
     pub fn hide_player(&self, other_id: uuid::Uuid) {
-        let newly_hidden = self
-            .hidden_players
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(other_id);
-        if !newly_hidden {
+        if !self.set_hidden(other_id, true) {
             return;
         }
         let world = self.world();
@@ -4678,11 +4680,7 @@ impl Player {
     /// Reverses [`Self::hide_player`]: tab list entry first (Java drops spawns without it), then
     /// the entity is tracked again if in range.
     pub fn show_player(&self, other_id: uuid::Uuid) {
-        let was_hidden = self
-            .hidden_players
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&other_id);
+        let was_hidden = self.set_hidden(other_id, false);
         let world = self.world();
         if let Some(other) = world.get_player_by_uuid(other_id) {
             // Not hidden: the tab entry is already there, but the entity may still be untracked
@@ -4698,7 +4696,55 @@ impl Player {
         }
     }
 
+    /// Inserts / removes `id` in the hidden set; true if it changed. Keeps `has_hidden` in step.
+    fn set_hidden(&self, id: uuid::Uuid, hidden: bool) -> bool {
+        let mut set = self
+            .hidden_players
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let changed = if hidden {
+            set.insert(id)
+        } else {
+            set.remove(&id)
+        };
+        self.has_hidden.store(!set.is_empty(), Ordering::Release);
+        changed
+    }
+
+    /// Hides any entity from this player (Bukkit `hideEntity`): destroyed on this client and
+    /// kept out of `broadcast_to_player`, so it stays hidden across range and chunk changes.
+    /// A player is delegated to [`Self::hide_player`] (tab list entry too). The set lives on
+    /// this player, so it is dropped with it.
+    pub fn hide_entity(&self, entity_id: i32, entity_uuid: uuid::Uuid) {
+        let world = self.world();
+        if world.get_player_by_id(entity_id).is_some() {
+            return self.hide_player(entity_uuid);
+        }
+        if self.set_hidden(entity_uuid, true)
+            && let Some(tracked) = world.entity_tracker.get_tracked_entity(entity_id)
+        {
+            tracked.remove_player(self);
+        }
+    }
+
+    /// Reverses [`Self::hide_entity`]; the entity is spawned again if in range.
+    pub fn show_entity(&self, entity_id: i32, entity_uuid: uuid::Uuid) {
+        let world = self.world();
+        if world.get_player_by_id(entity_id).is_some() {
+            return self.show_player(entity_uuid);
+        }
+        self.set_hidden(entity_uuid, false);
+        if let Some(me) = world.get_player_by_id(self.entity_id())
+            && let Some(tracked) = world.entity_tracker.get_tracked_entity(entity_id)
+        {
+            tracked.update_player(&me, &world);
+        }
+    }
+
     pub fn can_see(&self, other_id: &uuid::Uuid) -> bool {
+        if !self.has_hidden.load(Ordering::Acquire) {
+            return true;
+        }
         !self
             .hidden_players
             .lock()
