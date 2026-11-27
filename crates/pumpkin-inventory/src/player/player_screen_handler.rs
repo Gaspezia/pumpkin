@@ -419,4 +419,25 @@ mod tests {
         assert_eq!(handler.get_slot(12).get_stack().item_count, 1);
         assert_eq!(handler.get_slot(13).get_stack().item_count, 1);
     }
+
+    /// A cancelled throw ends in `cancel()` (called by `Player::on_slot_click`): it must request
+    /// a full resync, which bumps the revision, and leave the stack untouched.
+    #[test]
+    fn cancelled_throw_resync_bumps_revision_and_keeps_stack() {
+        let (mut handler, _player) = make_handler(false);
+        handler
+            .get_slot(36)
+            .set_stack(ItemStack::new(16, &Item::COMPASS));
+        let before = handler
+            .get_behaviour()
+            .revision
+            .load(std::sync::atomic::Ordering::Relaxed);
+        handler.cancel();
+        let after = handler
+            .get_behaviour()
+            .revision
+            .load(std::sync::atomic::Ordering::Relaxed);
+        assert_ne!(before, after);
+        assert_eq!(handler.get_slot(36).get_stack().item_count, 16);
+    }
 }

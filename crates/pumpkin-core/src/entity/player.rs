@@ -6205,16 +6205,8 @@ impl Player {
         self.world().spawn_entity(item_entity);
     }
 
-    pub fn drop_held_item(&self, drop_stack: bool) {
-        let mut item_stack = self.inventory().held_item();
-
-        if item_stack.is_empty() {
-            return;
-        }
-
-        let drop_amount = if drop_stack { item_stack.item_count } else { 1 };
-        let dropped_stack = item_stack.copy_with_count(drop_amount);
-
+    /// Fires `PlayerDropItemEvent` for `dropped_stack`; `true` when a plugin cancelled it.
+    pub fn drop_event_cancelled(&self, dropped_stack: &ItemStack) -> bool {
         if let Some(server) = self.world().server.upgrade()
             && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
         {
@@ -6225,11 +6217,39 @@ impl Player {
                     dropped_stack.item_count,
                 );
             server.plugin_manager.fire_blocking(&server, &mut event);
-            if event.cancelled {
-                return;
-            }
+            return event.cancelled;
+        }
+        false
+    }
+
+    pub fn drop_held_item(&self, drop_stack: bool) {
+        let item_stack = self.inventory().held_item();
+
+        if item_stack.is_empty() {
+            return;
         }
 
+        let drop_amount = if drop_stack { item_stack.item_count } else { 1 };
+        let dropped_stack = item_stack.copy_with_count(drop_amount);
+
+        if self.drop_event_cancelled(&dropped_stack) {
+            // Paper puts the item back and resyncs the slot: the client already
+            // removed the item locally when it sent the drop action. Re-read the
+            // slot: a handler may have replaced the held item while cancelling.
+            self.sync_hand_slot(
+                self.inventory.get_selected_slot() as usize,
+                self.inventory().held_item(),
+            );
+            return;
+        }
+
+        // A handler may have moved the held item without cancelling: drop what is really held.
+        let mut item_stack = self.inventory().held_item();
+        if item_stack.is_empty() {
+            return;
+        }
+        let drop_amount = if drop_stack { item_stack.item_count } else { 1 };
+        let dropped_stack = item_stack.copy_with_count(drop_amount);
         item_stack.decrement(drop_amount);
         let updated_stack = item_stack.clone();
         self.inventory().set_held_item(updated_stack.clone());
@@ -7229,6 +7249,7 @@ impl Player {
             clicked_item,
             cursor_item,
             window_type,
+            slot_takable,
         ) = {
             let screen_handler_arc = self
                 .current_screen_handler
@@ -7256,6 +7277,11 @@ impl Player {
             );
 
             let window_type = screen_handler.window_type();
+            // Same guard as the THROW branch of the screen handler (grab + take rules).
+            let slot_takable = packet.slot >= 0
+                && (packet.slot as usize) < b.slots.len()
+                && b.can_grab_from_slot(packet.slot as usize)
+                && b.slots[packet.slot as usize].can_take_items(self.as_ref());
 
             (
                 sync_id,
@@ -7265,6 +7291,7 @@ impl Player {
                 clicked_item,
                 cursor_item,
                 window_type,
+                slot_takable,
             )
         };
 
@@ -7381,7 +7408,7 @@ impl Player {
                 slot,
                 raw_slot,
                 clicked_item.clone(),
-                cursor_item,
+                cursor_item.clone(),
                 i32::from(hotbar_button),
             );
             'after: {}
@@ -7526,6 +7553,22 @@ impl Player {
                 cancel_screen();
                 return;
             }
+        }
+
+        // Fired before any inventory lock is taken: a plugin handler may call back into the
+        // inventory host functions, which take the screen handler lock.
+        if let Some(thrown) = planned_container_throw(
+            &packet.mode,
+            packet.slot,
+            packet.button,
+            clicked_item.as_ref(),
+            cursor_item.as_ref(),
+            slot_takable,
+        ) && self.drop_event_cancelled(&thrown)
+        {
+            // The client already removed the item locally: resync window and cursor.
+            cancel_screen();
+            return;
         }
 
         let screen_handler_arc = self
@@ -9874,6 +9917,34 @@ const fn may_attack(mode: GameMode) -> bool {
     !matches!(mode, GameMode::Spectator)
 }
 
+/// Stack a click packet would throw out of an open container, if any: slot `THROW` (Q = 1,
+/// Ctrl+Q = whole stack) or a click outside the window (-999) holding a cursor item (left = all,
+/// right = one).
+fn planned_container_throw(
+    mode: &SlotActionType,
+    slot: i16,
+    button: i8,
+    clicked: Option<&ItemStack>,
+    cursor: Option<&ItemStack>,
+    slot_takable: bool,
+) -> Option<ItemStack> {
+    let (stack, whole) = match mode {
+        // The screen handler only throws from a takable slot while the cursor is empty.
+        SlotActionType::Throw
+            if slot >= 0 && slot_takable && cursor.is_none_or(ItemStack::is_empty) =>
+        {
+            (clicked?, button == 1)
+        }
+        SlotActionType::Pickup | SlotActionType::QuickMove
+            if slot == -999 && (button == 0 || button == 1) =>
+        {
+            (cursor?, button == 0)
+        }
+        _ => return None,
+    };
+    (!stack.is_empty()).then(|| stack.copy_with_count(if whole { stack.item_count } else { 1 }))
+}
+
 #[cfg(test)]
 mod attack_gate_tests {
     use super::{GameMode, may_attack};
@@ -9884,5 +9955,34 @@ mod attack_gate_tests {
         for mode in [GameMode::Survival, GameMode::Creative, GameMode::Adventure] {
             assert!(may_attack(mode));
         }
+    }
+}
+
+#[cfg(test)]
+mod container_throw_tests {
+    use super::{ItemStack, SlotActionType, planned_container_throw};
+    use pumpkin_data::item::Item;
+
+    #[test]
+    fn plans_the_stack_thrown_from_an_open_container() {
+        let s = ItemStack::new(16, &Item::COMPASS);
+        let n = |m, slot, b, c: Option<&ItemStack>, cur: Option<&ItemStack>, ok: bool| {
+            planned_container_throw(&m, slot, b, c, cur, ok).map(|t| t.item_count)
+        };
+        let t = SlotActionType::Throw;
+        let p = SlotActionType::Pickup;
+        assert_eq!(n(t.clone(), 36, 0, Some(&s), None, true), Some(1));
+        assert_eq!(n(t.clone(), 36, 1, Some(&s), None, true), Some(16));
+        assert_eq!(n(p.clone(), -999, 0, None, Some(&s), true), Some(16));
+        assert_eq!(n(p.clone(), -999, 1, None, Some(&s), true), Some(1));
+        assert_eq!(n(p.clone(), 5, 0, Some(&s), Some(&s), true), None);
+        assert_eq!(n(p, -999, 0, None, None, true), None);
+        assert_eq!(
+            n(t.clone(), 36, 0, Some(ItemStack::EMPTY), None, true),
+            None
+        );
+        // No event for a throw the screen handler will refuse.
+        assert_eq!(n(t.clone(), 36, 0, Some(&s), Some(&s), true), None);
+        assert_eq!(n(t, 36, 0, Some(&s), None, false), None);
     }
 }

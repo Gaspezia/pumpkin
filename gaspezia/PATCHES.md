@@ -46,6 +46,8 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 58 | Eclairage : la lumiere du ciel se propage a l'interieur des chunks voisins (propagation sur tout le cache, plus sur la seule fenetre 18x18) ; plus de gel des cellules deja reclamees par une graine (reprend Pumpkin-MC#2733). |
 | 59 | Eclairage : la lumiere modifiee dans un chunk deja envoye (relight d'un voisin `Level`) est renvoyee aux joueurs qui le voient (`CLightUpdate`, chunk entier), comme `ChunkHolder.broadcastChanges` en vanilla ; depend du patch 58. |
 | 60 | Plugins WASM : l'armure posee par `set_helmet`/`set_chestplate`/`set_leggings`/`set_boots`/`set_armor_contents` (hote v0.2) est diffusee aux joueurs qui voient le porteur (`CSetEquipment`), comme le tick vanilla `detectEquipmentUpdates`. |
+| 61 | Un plugin qui annule `PlayerDropItemEvent` (touche Q / Ctrl+Q) remet l'objet en place cote client : `sync_hand_slot` de l'emplacement tenu, comme Paper. |
+| 62 | Un objet jete depuis un menu ouvert (`THROW`, clic hors fenetre) declenche `PlayerDropItemEvent` ; si un plugin l'annule, la pile reste en place et la fenetre + le curseur sont resynchronises ; depend du patch 61. |
 | 37 | Combat PvP 1.8, lot 3 (L7, canne a peche) : lancer 1,5, gravite 0,04 puis trainee 0,92/0,5, accroche par un coup a 0 degat (recul et invulnerabilite), jamais de traction d'un joueur, flotteur retire si la canne n'est plus tenue | branche `gaspezia-patch/pvp18-rod` | aucune (propre au fork) | PR Gaspezia/pumpkin #39 | 2026-11-21 |
 | 36 | Combat PvP 1.8, lot 3 (L6, projectiles) : depart a l'oeil avec decalage lateral 0,16, imprecision gaussienne 0,0075, ordre deplacement-trainee-gravite des objets lances, fleche dans l'eau, marge de collision 0,3, tireur touchable apres 5 ticks, Frappe sans resistance, potion jetable | branche `gaspezia-patch/pvp18-projectiles` | aucune (propre au fork) | PR Gaspezia/pumpkin #38 | 2026-11-21 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
@@ -494,6 +496,29 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Tests : `armor_broadcast_tests` (`inventory.rs`) sur le lot d'equipement et les emplacements ecrits. Pas de harnais `Player` dans le cœur : l'envoi reseau lui-meme n'est pas teste (limite).
 - Fichiers : `pumpkin-wasm-host-v0_2/src/inventory.rs`.
 - Meme trou sur upstream/master (`inventory.rs:1126` : aucun `send_equipment_changes`).
+- Proposable upstream : oui.
+
+### Patch 61 : drop annule par un plugin, emplacement resynchronise
+
+- Quoi : `Player::drop_held_item` (`pumpkin-core/src/entity/player.rs`), appele par `player_action.rs:265/268` (Q, Ctrl+Q) et le chemin Bedrock, appelle `sync_hand_slot(slot tenu, pile intacte)` quand l'evenement est annule, au lieu d'un simple `return`.
+- Pourquoi : le client retire l'objet localement en envoyant l'action de drop ; sans resynchronisation il restait invisible jusqu'au prochain rafraichissement. Boussole du lobby, kits Arena et BedWars annulent tous ce drop. Cote serveur l'objet n'est retire qu'apres l'evenement : rien a restaurer.
+- Choix : meme mecanisme que le clic d'inventaire refuse (`sync_hand_slot` : `CSetPlayerInventory`, contenus du handler, equipement diffuse). La pile renvoyee au client est relue apres l'evenement (un handler peut avoir remplace l'objet) ; sans annulation, la main est aussi relue apres l'evenement et c'est l'objet reellement tenu qui est jete.
+- Limite : le drop depuis l'inventaire ouvert (clic hors fenetre, `THROW`) passe par `InventoryPlayer::drop_item` sans declencher `PlayerDropItemEvent` : il n'est donc pas annulable aujourd'hui (trou distinct, non traite ici).
+- Tests : aucun (pas de harnais `Player` ; le test precedent, tautologique, a ete retire). Le patch repose sur la relecture du code et un test en jeu.
+- Fichiers : `pumpkin-core/src/entity/player.rs`.
+- Meme trou sur upstream/master (`player.rs:6347`, `return` sans resync).
+- Proposable upstream : oui.
+
+### Patch 62 : jet depuis un menu ouvert, evenement de drop annulable
+
+- Quoi : `Player::on_slot_click` (`pumpkin-core/src/entity/player.rs`) calcule le jet prevu (`planned_container_throw` : `THROW` d'un emplacement Q = 1 / Ctrl+Q = pile, clic gauche/droit hors fenetre avec un objet au curseur = pile / 1) a partir des copies `clicked_item` et `cursor_item`, puis declenche `PlayerDropItemEvent` (`drop_event_cancelled`, partage avec `drop_held_item`) AVANT de prendre le verrou du screen handler, comme `InventoryClickEvent`. Annule : `cancel_screen()` puis `return` (contenu + curseur resynchronises, rien n'est retire).
+- Pourquoi : ces chemins appelaient `drop_item` sans evenement. Declencher l'evenement sous le verrou du screen handler (premiere version) pouvait provoquer un interblocage avec les fonctions hote qui prennent ce verrou (`close_inventory`, `get_cursor_item`...), d'ou ce point de declenchement.
+- Dependance : patch 61 (PR #65, meme zone) ; la PR #66 embarque son diff.
+- Tests : `container_throw_tests` (decision du jet prevu, rouge si Q/Ctrl+Q sont inverses) et `cancelled_throw_resync_bumps_revision_and_keeps_stack` (`cancel()` demande la resynchronisation). L'appel dans `on_slot_click` lui-meme n'est pas teste (pas de harnais `Player`).
+- Ecart avec Paper : un jet annule laisse l'objet en place (coffre, curseur) ; Paper le remet dans l'inventaire du joueur (`addItem`). Le fork fait mieux.
+- Limites : jet depuis l'inventaire creatif (`set_creative_slot.rs:59`) et chemin Bedrock sans evenement ; drops de debordement sans evenement ; Ctrl+Q sur un emplacement de resultat (craft) ou une armure maudite : quantite annoncee approximative (un evenement pour la pile prevue, pas un par `drop()` reel) ; le glisser hors fenetre ne jette rien ; course : l'etat de la fenetre peut changer entre la lecture initiale (copies, `slot_takable`) et la prise du verrou, l'evenement annonce alors le jet calcule sur l'etat lu avant ; Ctrl+Q sur un emplacement de resultat : un seul evenement pour une boucle qui peut jeter plusieurs resultats (non corrige).
+- Fichiers : `pumpkin-core/src/entity/player.rs`.
+- Upstream/master : meme trou (`screen_handler.rs:973-1062`, `drop_item` sans evenement).
 - Proposable upstream : oui.
 
 ## CI du fork

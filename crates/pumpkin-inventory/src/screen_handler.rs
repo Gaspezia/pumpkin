@@ -1516,7 +1516,7 @@ impl ScreenHandlerBehaviour {
         index >= self.container_slots || self.allow_put_items
     }
 
-    const fn can_grab_from_slot(&self, index: usize) -> bool {
+    pub const fn can_grab_from_slot(&self, index: usize) -> bool {
         index >= self.container_slots || self.allow_grab_items
     }
 
