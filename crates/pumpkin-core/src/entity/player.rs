@@ -6205,16 +6205,8 @@ impl Player {
         self.world().spawn_entity(item_entity);
     }
 
-    pub fn drop_held_item(&self, drop_stack: bool) {
-        let mut item_stack = self.inventory().held_item();
-
-        if item_stack.is_empty() {
-            return;
-        }
-
-        let drop_amount = held_drop_amount(&item_stack, drop_stack);
-        let dropped_stack = item_stack.copy_with_count(drop_amount);
-
+    /// Fires `PlayerDropItemEvent` for `dropped_stack`; `true` when a plugin cancelled it.
+    pub fn drop_event_cancelled(&self, dropped_stack: &ItemStack) -> bool {
         if let Some(server) = self.world().server.upgrade()
             && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
         {
@@ -6225,15 +6217,29 @@ impl Player {
                     dropped_stack.item_count,
                 );
             server.plugin_manager.fire_blocking(&server, &mut event);
-            if event.cancelled {
-                // Paper puts the item back and resyncs the slot: the client already
-                // removed the item locally when it sent the drop action.
-                self.sync_hand_slot(
-                    self.inventory.get_selected_slot() as usize,
-                    cancelled_drop_resync_stack(&item_stack),
-                );
-                return;
-            }
+            return event.cancelled;
+        }
+        false
+    }
+
+    pub fn drop_held_item(&self, drop_stack: bool) {
+        let mut item_stack = self.inventory().held_item();
+
+        if item_stack.is_empty() {
+            return;
+        }
+
+        let drop_amount = held_drop_amount(&item_stack, drop_stack);
+        let dropped_stack = item_stack.copy_with_count(drop_amount);
+
+        if self.drop_event_cancelled(&dropped_stack) {
+            // Paper puts the item back and resyncs the slot: the client already
+            // removed the item locally when it sent the drop action.
+            self.sync_hand_slot(
+                self.inventory.get_selected_slot() as usize,
+                cancelled_drop_resync_stack(&item_stack),
+            );
+            return;
         }
 
         item_stack.decrement(drop_amount);
@@ -9064,6 +9070,10 @@ impl InventoryPlayer for Player {
 
     fn drop_item(&self, item: ItemStack, _retain_ownership: bool) {
         self.drop_item(item);
+    }
+
+    fn drop_cancelled_by_plugin(&self, item: &ItemStack) -> bool {
+        self.drop_event_cancelled(item)
     }
 
     fn has_infinite_materials(&self) -> bool {

@@ -47,6 +47,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 59 | Eclairage : la lumiere modifiee dans un chunk deja envoye (relight d'un voisin `Level`) est renvoyee aux joueurs qui le voient (`CLightUpdate`, chunk entier), comme `ChunkHolder.broadcastChanges` en vanilla ; depend du patch 58. |
 | 60 | Plugins WASM : l'armure posee par `set_helmet`/`set_chestplate`/`set_leggings`/`set_boots`/`set_armor_contents` (hote v0.2) est diffusee aux joueurs qui voient le porteur (`CSetEquipment`), comme le tick vanilla `detectEquipmentUpdates`. |
 | 61 | Un plugin qui annule `PlayerDropItemEvent` (touche Q / Ctrl+Q) remet l'objet en place cote client : `sync_hand_slot` de l'emplacement tenu, comme Paper. |
+| 62 | Un objet jete depuis un menu ouvert (`THROW`, clic hors fenetre) declenche `PlayerDropItemEvent` ; si un plugin l'annule, la pile reste en place et la fenetre + le curseur sont resynchronises ; depend du patch 61. |
 | 37 | Combat PvP 1.8, lot 3 (L7, canne a peche) : lancer 1,5, gravite 0,04 puis trainee 0,92/0,5, accroche par un coup a 0 degat (recul et invulnerabilite), jamais de traction d'un joueur, flotteur retire si la canne n'est plus tenue | branche `gaspezia-patch/pvp18-rod` | aucune (propre au fork) | PR Gaspezia/pumpkin #39 | 2026-11-21 |
 | 36 | Combat PvP 1.8, lot 3 (L6, projectiles) : depart a l'oeil avec decalage lateral 0,16, imprecision gaussienne 0,0075, ordre deplacement-trainee-gravite des objets lances, fleche dans l'eau, marge de collision 0,3, tireur touchable apres 5 ticks, Frappe sans resistance, potion jetable | branche `gaspezia-patch/pvp18-projectiles` | aucune (propre au fork) | PR Gaspezia/pumpkin #38 | 2026-11-21 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
@@ -506,6 +507,17 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Tests : `cancelled_drop_tests` (rouge si la pile resynchronisee est vide, vert apres). Pas de harnais `Player` : l'envoi du paquet lui-meme n'est pas teste (limite).
 - Fichiers : `pumpkin-core/src/entity/player.rs`.
 - Meme trou sur upstream/master (`player.rs:6347`, `return` sans resync).
+- Proposable upstream : oui.
+
+### Patch 62 : jet depuis un menu ouvert, evenement de drop annulable
+
+- Quoi : `ScreenHandler::internal_on_slot_click` (`pumpkin-inventory/src/screen_handler.rs`) appelle le nouveau `InventoryPlayer::drop_cancelled_by_plugin` avant le `THROW` d'un emplacement (Q = 1, Ctrl+Q = pile) et avant le clic gauche/droit hors fenetre avec un objet au curseur (pile ou 1). `Player` l'implemente via `drop_event_cancelled` (`pumpkin-core/src/entity/player.rs`), factorise avec `drop_held_item`. Annule : rien n'est retire, puis `sync_state()` (contenu + curseur), le mecanisme du clic refuse.
+- Pourquoi : ces chemins appelaient `drop_item` sans evenement : la boussole du lobby et les objets de kit pouvaient etre jetes depuis l'inventaire ouvert.
+- Dependance : patch 61 (PR #65, meme zone, branche basee dessus) ; la PR inclut son diff tant que #65 n'est pas mergee.
+- Tests : `inventory_throw_fires_drop_event_and_cancel_restores_stack` sur le vrai `PlayerScreenHandler` avec un joueur factice qui annule ou non (rouge sans l'appel, verifie par mutation).
+- Limites : le glisser hors fenetre (`QuickCraft`) ne jette rien dans ce code, donc non concerne ; le chemin Bedrock (`inventory_action.rs`) et les drops de debordement (inventaire plein) restent sans evenement ; `Player::drop_cancelled_by_plugin` lui-meme (evenement reel) n'est pas teste faute de harnais `Player`.
+- Fichiers : `pumpkin-inventory/src/screen_handler.rs`, `pumpkin-core/src/entity/player.rs`.
+- Upstream/master : meme trou (`screen_handler.rs:973-1062`, `drop_item` sans evenement ; aucun `PlayerDropItemEvent` dans `pumpkin-inventory`).
 - Proposable upstream : oui.
 
 ## CI du fork

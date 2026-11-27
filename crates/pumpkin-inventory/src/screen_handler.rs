@@ -142,6 +142,12 @@ pub trait InventoryPlayer: Send + Sync {
     /// - `retain_ownership` - If true, the player keeps ownership (for pickup delay)
     fn drop_item(&self, item: ItemStack, retain_ownership: bool);
 
+    /// Fires the plugin drop event for a stack thrown from an open container and returns
+    /// `true` when a plugin cancelled it (the stack must then stay where it is).
+    fn drop_cancelled_by_plugin(&self, _item: &ItemStack) -> bool {
+        false
+    }
+
     /// Gets the player's inventory.
     fn get_inventory(&self) -> Arc<PlayerInventory>;
 
@@ -982,7 +988,18 @@ pub trait ScreenHandler: Send + Sync {
             {
                 let slot = self.get_behaviour().slots[slot_index as usize].clone();
                 let prev_stack = slot.get_cloned_stack();
-                if !prev_stack.is_empty() {
+                if !prev_stack.is_empty()
+                    && player.drop_cancelled_by_plugin(&prev_stack.copy_with_count(
+                        if button == 1 {
+                            prev_stack.item_count
+                        } else {
+                            1
+                        },
+                    ))
+                {
+                    // The client removed the item locally: put it back.
+                    self.sync_state();
+                } else if !prev_stack.is_empty() {
                     if button == 1 {
                         // Throw all
                         while slot
@@ -1054,7 +1071,16 @@ pub trait ScreenHandler: Send + Sync {
                     .cursor_stack
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if !cursor_stack.is_empty() {
+                let thrown = cursor_stack.copy_with_count(if click_type == MouseClick::Left {
+                    cursor_stack.item_count
+                } else {
+                    1
+                });
+                if !cursor_stack.is_empty() && player.drop_cancelled_by_plugin(&thrown) {
+                    // The client cleared its cursor locally: restore it.
+                    drop(cursor_stack);
+                    self.sync_state();
+                } else if !cursor_stack.is_empty() {
                     if click_type == MouseClick::Left {
                         player.drop_item(cursor_stack.clone(), true);
                         *cursor_stack = ItemStack::EMPTY.clone();
