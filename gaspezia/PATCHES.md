@@ -502,7 +502,7 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 
 - Quoi : `Player::drop_held_item` (`pumpkin-core/src/entity/player.rs`), appele par `player_action.rs:265/268` (Q, Ctrl+Q) et le chemin Bedrock, appelle `sync_hand_slot(slot tenu, pile intacte)` quand l'evenement est annule, au lieu d'un simple `return`.
 - Pourquoi : le client retire l'objet localement en envoyant l'action de drop ; sans resynchronisation il restait invisible jusqu'au prochain rafraichissement. Boussole du lobby, kits Arena et BedWars annulent tous ce drop. Cote serveur l'objet n'est retire qu'apres l'evenement : rien a restaurer.
-- Choix : meme mecanisme que le clic d'inventaire refuse (`sync_hand_slot` : `CSetPlayerInventory`, contenus du handler, equipement diffuse). La pile renvoyee au client est relue apres l'evenement (un handler peut avoir remplace l'objet).
+- Choix : meme mecanisme que le clic d'inventaire refuse (`sync_hand_slot` : `CSetPlayerInventory`, contenus du handler, equipement diffuse). La pile renvoyee au client est relue apres l'evenement (un handler peut avoir remplace l'objet) ; sans annulation, la main est aussi relue apres l'evenement et c'est l'objet reellement tenu qui est jete.
 - Limite : le drop depuis l'inventaire ouvert (clic hors fenetre, `THROW`) passe par `InventoryPlayer::drop_item` sans declencher `PlayerDropItemEvent` : il n'est donc pas annulable aujourd'hui (trou distinct, non traite ici).
 - Tests : aucun (pas de harnais `Player` ; le test precedent, tautologique, a ete retire). Le patch repose sur la relecture du code et un test en jeu.
 - Fichiers : `pumpkin-core/src/entity/player.rs`.
@@ -516,7 +516,7 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Dependance : patch 61 (PR #65, meme zone) ; la PR #66 embarque son diff.
 - Tests : `container_throw_tests` (decision du jet prevu, rouge si Q/Ctrl+Q sont inverses) et `cancelled_throw_resync_bumps_revision_and_keeps_stack` (`cancel()` demande la resynchronisation). L'appel dans `on_slot_click` lui-meme n'est pas teste (pas de harnais `Player`).
 - Ecart avec Paper : un jet annule laisse l'objet en place (coffre, curseur) ; Paper le remet dans l'inventaire du joueur (`addItem`). Le fork fait mieux.
-- Limites : jet depuis l'inventaire creatif (`set_creative_slot.rs:59`) et chemin Bedrock sans evenement ; drops de debordement sans evenement ; Ctrl+Q sur un emplacement de resultat (craft) ou une armure maudite : quantite annoncee approximative (un evenement pour la pile prevue, pas un par `drop()` reel) ; le glisser hors fenetre ne jette rien.
+- Limites : jet depuis l'inventaire creatif (`set_creative_slot.rs:59`) et chemin Bedrock sans evenement ; drops de debordement sans evenement ; Ctrl+Q sur un emplacement de resultat (craft) ou une armure maudite : quantite annoncee approximative (un evenement pour la pile prevue, pas un par `drop()` reel) ; le glisser hors fenetre ne jette rien ; course : l'etat de la fenetre peut changer entre la lecture initiale (copies, `slot_takable`) et la prise du verrou, l'evenement annonce alors le jet calcule sur l'etat lu avant ; Ctrl+Q sur un emplacement de resultat : un seul evenement pour une boucle qui peut jeter plusieurs resultats (non corrige).
 - Fichiers : `pumpkin-core/src/entity/player.rs`.
 - Upstream/master : meme trou (`screen_handler.rs:973-1062`, `drop_item` sans evenement).
 - Proposable upstream : oui.

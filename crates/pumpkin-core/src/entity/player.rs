@@ -6223,7 +6223,7 @@ impl Player {
     }
 
     pub fn drop_held_item(&self, drop_stack: bool) {
-        let mut item_stack = self.inventory().held_item();
+        let item_stack = self.inventory().held_item();
 
         if item_stack.is_empty() {
             return;
@@ -6243,6 +6243,13 @@ impl Player {
             return;
         }
 
+        // A handler may have moved the held item without cancelling: drop what is really held.
+        let mut item_stack = self.inventory().held_item();
+        if item_stack.is_empty() {
+            return;
+        }
+        let drop_amount = if drop_stack { item_stack.item_count } else { 1 };
+        let dropped_stack = item_stack.copy_with_count(drop_amount);
         item_stack.decrement(drop_amount);
         let updated_stack = item_stack.clone();
         self.inventory().set_held_item(updated_stack.clone());
@@ -7242,6 +7249,7 @@ impl Player {
             clicked_item,
             cursor_item,
             window_type,
+            slot_takable,
         ) = {
             let screen_handler_arc = self
                 .current_screen_handler
@@ -7269,6 +7277,11 @@ impl Player {
             );
 
             let window_type = screen_handler.window_type();
+            // Same guard as the THROW branch of the screen handler (grab + take rules).
+            let slot_takable = packet.slot >= 0
+                && (packet.slot as usize) < b.slots.len()
+                && b.can_grab_from_slot(packet.slot as usize)
+                && b.slots[packet.slot as usize].can_take_items(self.as_ref());
 
             (
                 sync_id,
@@ -7278,6 +7291,7 @@ impl Player {
                 clicked_item,
                 cursor_item,
                 window_type,
+                slot_takable,
             )
         };
 
@@ -7549,6 +7563,7 @@ impl Player {
             packet.button,
             clicked_item.as_ref(),
             cursor_item.as_ref(),
+            slot_takable,
         ) && self.drop_event_cancelled(&thrown)
         {
             // The client already removed the item locally: resync window and cursor.
@@ -9911,9 +9926,15 @@ fn planned_container_throw(
     button: i8,
     clicked: Option<&ItemStack>,
     cursor: Option<&ItemStack>,
+    slot_takable: bool,
 ) -> Option<ItemStack> {
     let (stack, whole) = match mode {
-        SlotActionType::Throw if slot >= 0 => (clicked?, button == 1),
+        // The screen handler only throws from a takable slot while the cursor is empty.
+        SlotActionType::Throw
+            if slot >= 0 && slot_takable && cursor.is_none_or(ItemStack::is_empty) =>
+        {
+            (clicked?, button == 1)
+        }
         SlotActionType::Pickup | SlotActionType::QuickMove
             if slot == -999 && (button == 0 || button == 1) =>
         {
@@ -9945,18 +9966,23 @@ mod container_throw_tests {
     #[test]
     fn plans_the_stack_thrown_from_an_open_container() {
         let s = ItemStack::new(16, &Item::COMPASS);
-        let n = |m, slot, b, c: Option<&ItemStack>, cur: Option<&ItemStack>| {
-            planned_container_throw(&m, slot, b, c, cur).map(|t| t.item_count)
+        let n = |m, slot, b, c: Option<&ItemStack>, cur: Option<&ItemStack>, ok: bool| {
+            planned_container_throw(&m, slot, b, c, cur, ok).map(|t| t.item_count)
         };
-        assert_eq!(n(SlotActionType::Throw, 36, 0, Some(&s), None), Some(1));
-        assert_eq!(n(SlotActionType::Throw, 36, 1, Some(&s), None), Some(16));
-        assert_eq!(n(SlotActionType::Pickup, -999, 0, None, Some(&s)), Some(16));
-        assert_eq!(n(SlotActionType::Pickup, -999, 1, None, Some(&s)), Some(1));
-        assert_eq!(n(SlotActionType::Pickup, 5, 0, Some(&s), Some(&s)), None);
-        assert_eq!(n(SlotActionType::Pickup, -999, 0, None, None), None);
+        let t = SlotActionType::Throw;
+        let p = SlotActionType::Pickup;
+        assert_eq!(n(t.clone(), 36, 0, Some(&s), None, true), Some(1));
+        assert_eq!(n(t.clone(), 36, 1, Some(&s), None, true), Some(16));
+        assert_eq!(n(p.clone(), -999, 0, None, Some(&s), true), Some(16));
+        assert_eq!(n(p.clone(), -999, 1, None, Some(&s), true), Some(1));
+        assert_eq!(n(p.clone(), 5, 0, Some(&s), Some(&s), true), None);
+        assert_eq!(n(p, -999, 0, None, None, true), None);
         assert_eq!(
-            n(SlotActionType::Throw, 36, 0, Some(ItemStack::EMPTY), None),
+            n(t.clone(), 36, 0, Some(ItemStack::EMPTY), None, true),
             None
         );
+        // No event for a throw the screen handler will refuse.
+        assert_eq!(n(t.clone(), 36, 0, Some(&s), Some(&s), true), None);
+        assert_eq!(n(t, 36, 0, Some(&s), None, false), None);
     }
 }
