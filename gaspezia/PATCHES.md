@@ -48,6 +48,7 @@ Mise a jour : `gaspezia/update.sh` (merge, jamais de rebase). Aucune PR ni messa
 | 60 | Plugins WASM : l'armure posee par `set_helmet`/`set_chestplate`/`set_leggings`/`set_boots`/`set_armor_contents` (hote v0.2) est diffusee aux joueurs qui voient le porteur (`CSetEquipment`), comme le tick vanilla `detectEquipmentUpdates`. |
 | 61 | Un plugin qui annule `PlayerDropItemEvent` (touche Q / Ctrl+Q) remet l'objet en place cote client : `sync_hand_slot` de l'emplacement tenu, comme Paper. |
 | 62 | Un objet jete depuis un menu ouvert (`THROW`, clic hors fenetre) declenche `PlayerDropItemEvent` ; si un plugin l'annule, la pile reste en place et la fenetre + le curseur sont resynchronises ; depend du patch 61. |
+| 64 | Jamais deux fois la creation d'un objectif de scoreboard ou d'une equipe vers un meme client : un `Add`/`Create` deja annonce devient `Update` (kick « Network Protocol Error », Gaspezia/Backlogs#220). |
 | 37 | Combat PvP 1.8, lot 3 (L7, canne a peche) : lancer 1,5, gravite 0,04 puis trainee 0,92/0,5, accroche par un coup a 0 degat (recul et invulnerabilite), jamais de traction d'un joueur, flotteur retire si la canne n'est plus tenue | branche `gaspezia-patch/pvp18-rod` | aucune (propre au fork) | PR Gaspezia/pumpkin #39 | 2026-11-21 |
 | 36 | Combat PvP 1.8, lot 3 (L6, projectiles) : depart a l'oeil avec decalage lateral 0,16, imprecision gaussienne 0,0075, ordre deplacement-trainee-gravite des objets lances, fleche dans l'eau, marge de collision 0,3, tireur touchable apres 5 ticks, Frappe sans resistance, potion jetable | branche `gaspezia-patch/pvp18-projectiles` | aucune (propre au fork) | PR Gaspezia/pumpkin #38 | 2026-11-21 |
 | 18 | `hide-player` masque reellement le joueur cote client (destruction de l'entite, plus de spawn tant qu'il est cache, retrait de la tab list) ; `show-player` restaure | branche `gaspezia-patch/hide-player` | aucune (proposable) | PR Gaspezia/pumpkin (lot 3 du 2026-11-20) | 2026-11-20 |
@@ -519,6 +520,17 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Limites : jet depuis l'inventaire creatif (`set_creative_slot.rs:59`) et chemin Bedrock sans evenement ; drops de debordement sans evenement ; Ctrl+Q sur un emplacement de resultat (craft) ou une armure maudite : quantite annoncee approximative (un evenement pour la pile prevue, pas un par `drop()` reel) ; le glisser hors fenetre ne jette rien ; course : l'etat de la fenetre peut changer entre la lecture initiale (copies, `slot_takable`) et la prise du verrou, l'evenement annonce alors le jet calcule sur l'etat lu avant ; Ctrl+Q sur un emplacement de resultat : un seul evenement pour une boucle qui peut jeter plusieurs resultats (non corrige).
 - Fichiers : `pumpkin-core/src/entity/player.rs`.
 - Upstream/master : meme trou (`screen_handler.rs:973-1062`, `drop_item` sans evenement).
+- Proposable upstream : oui.
+
+### Patch 64 : pas de double creation d'objectif/equipe vers un client
+
+- Quoi : chaque `Player` garde `scoreboard_announced` (`Announced` : noms d'objectifs et d'equipes deja annonces au client). `ScoreboardTarget::send_objective` / `send_team` (`pumpkin-core/src/world/scoreboard.rs`) passent par ce suivi pour les cibles `Player` et `World` (le monde boucle sur ses joueurs) : un `Add` d'objectif deja annonce part en `Update`, un `Create` d'equipe deja annonce part en `Update` + `AddPlayers` ; un `Remove` libere le nom. `Scoreboard::send_to_player` est generique sur `ScoreboardTarget` et utilise les memes envois. Couvre le scoreboard par joueur (`set_scoreboard`, WIT) ET celui du monde.
+- Pourquoi : le joueur est dans `world.players` avant `spawn_java_player` (attente du chunk de spawn) ; un plugin lui cree un objectif/une equipe pendant ce temps, puis `send_scoreboard()` renvoie un `Add` pour chaque objectif : le client leve `An objective with the name '...' already exists!` (idem equipes) et kick. Vanilla n'envoie jamais deux fois la creation au meme client.
+- Respawn / changement de monde : l'ensemble est sur le `Player`, jamais vide ; le client vanilla garde son scoreboard (niveau connexion) et le fork ne le renvoie pas a ces occasions, donc rien a remettre a zero.
+- Tests : `plugin_add_then_send_to_player_sends_one_objective_add`, `plugin_team_then_send_to_player_sends_one_team_create`, `removed_names_can_be_announced_again` (rouges si le suivi est neutralise). Le `Player` reel n'a pas de harnais : une cible factice applique le meme `Announced`.
+- Limites : Bedrock non dedoublonne (paquet different, non concerne par le kick) ; le suivi ne regarde pas les noms d'objectifs d'un scoreboard personnalise remplace (l'ancien objectif reste connu du client, comme avant).
+- Fichiers : `pumpkin-core/src/world/scoreboard.rs`, `pumpkin-core/src/entity/player.rs`.
+- Upstream/master : meme trou (`send_to_player` renvoie `Mode::Add` pour chaque objectif, `scoreboard.rs:633-637`).
 - Proposable upstream : oui.
 
 ## CI du fork
