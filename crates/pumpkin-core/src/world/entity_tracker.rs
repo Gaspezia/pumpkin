@@ -433,14 +433,15 @@ impl TrackedEntity {
     }
 
     fn broadcast_to_player(&self, player: &Player) -> bool {
-        let (uuid, target_mode) = self.entity.get_player().map_or_else(
-            || (self.entity.get_entity().entity_uuid, None),
-            |t| (t.gameprofile.id, Some(t.gamemode.load())),
-        );
-        player_visible_to(
+        let target = self
+            .entity
+            .get_player()
+            .map(|t| (t.gameprofile.id, t.gamemode.load()));
+        entity_visible_to(
             player.gamemode.load(),
-            target_mode,
-            !player.can_see(&uuid),
+            target,
+            self.entity.get_entity().entity_uuid,
+            |id| player.can_see(id),
         )
     }
 
@@ -1385,13 +1386,24 @@ impl EntityTracker {
 /// non-player) is also hidden by `hide-entity`.
 const fn player_visible_to(observer: GameMode, target: Option<GameMode>, hidden: bool) -> bool {
     !hidden
-        && (matches!(observer, GameMode::Spectator)
-            || !matches!(target, Some(GameMode::Spectator)))
+        && (matches!(observer, GameMode::Spectator) || !matches!(target, Some(GameMode::Spectator)))
+}
+
+/// The decision `broadcast_to_player` returns: `target` is the profile uuid and game mode when
+/// the tracked entity is a player, `entity_uuid` is used otherwise.
+fn entity_visible_to(
+    observer: GameMode,
+    target: Option<(uuid::Uuid, GameMode)>,
+    entity_uuid: uuid::Uuid,
+    can_see: impl Fn(&uuid::Uuid) -> bool,
+) -> bool {
+    let id = target.map_or(entity_uuid, |(id, _)| id);
+    player_visible_to(observer, target.map(|(_, m)| m), !can_see(&id))
 }
 
 #[cfg(test)]
 mod visibility_tests {
-    use super::{GameMode, player_visible_to};
+    use super::{GameMode, entity_visible_to, player_visible_to};
 
     #[test]
     fn spectators_are_seen_only_by_spectators() {
@@ -1414,10 +1426,23 @@ mod visibility_tests {
 
     #[test]
     fn a_hidden_non_player_entity_is_not_broadcast_until_shown() {
+        let entity = uuid::Uuid::from_u128(7);
+        let mut hidden = std::collections::HashSet::new();
         for observer in [GameMode::Survival, GameMode::Creative, GameMode::Spectator] {
-            assert!(!player_visible_to(observer, None, true));
-            assert!(player_visible_to(observer, None, false));
+            hidden.insert(entity);
+            assert!(!entity_visible_to(observer, None, entity, |u| !hidden.contains(u)));
+            hidden.remove(&entity);
+            assert!(entity_visible_to(observer, None, entity, |u| !hidden.contains(u)));
         }
+    }
+
+    #[test]
+    fn a_hidden_player_is_hidden_by_profile_uuid() {
+        let (profile, other) = (uuid::Uuid::from_u128(1), uuid::Uuid::from_u128(2));
+        let can_see = |u: &uuid::Uuid| *u != profile;
+        let t = Some((profile, GameMode::Survival));
+        assert!(!entity_visible_to(GameMode::Survival, t, other, can_see));
+        assert!(entity_visible_to(GameMode::Survival, t, other, |_| true));
     }
 
     #[test]

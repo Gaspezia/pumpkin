@@ -529,7 +529,8 @@ Base initiale : upstream `master` @ `eda69440e` (0.2.2+26.3-26.60).
 - Nettoyage : l'ensemble vit sur le `Player` observateur, donc libere a sa deconnexion ; pour une entite morte, le plugin appelle `show-entity` (un uuid mort reste sinon dans l'ensemble jusqu'a la deconnexion).
 - Passagers : entites suivies a part, a cacher une par une ; cacher le porteur ne cache pas ses passagers (le client garde un passager orphelin a sa derniere position). Non etendu a la pile.
 - Evenement : `player-hide-entity-event` reste non declenche (aucun evenement plugin sous verrou).
-- Tests : `a_hidden_non_player_entity_is_not_broadcast_until_shown` + `a_hidden_player_is_never_visible` (decision de `broadcast_to_player`) ; rouges si un non-joueur ignore `hidden`. Pas de harnais `Player` : `hide_entity` / `show_entity` et l'hote ne sont pas testes.
+- Tests : `a_hidden_non_player_entity_is_not_broadcast_until_shown` et `a_hidden_player_is_hidden_by_profile_uuid` exercent `entity_visible_to`, la fonction que `broadcast_to_player` appelle seule ; rouges si un non-joueur ignore `hidden`. Pas de harnais `Player` : `hide_entity` / `show_entity`, `broadcast_to_player` (simple adaptateur) et l'hote ne sont pas testes.
+- Joueur vise : `hide_entity` / `show_entity` deleguent a `hide_player` / `show_player` (tab list). Chemin rapide : `Player::has_hidden` (maintenu sous le verrou) evite le verrou de `hidden_players` dans `can_see` quand rien n'est cache.
 - Fichiers : `pumpkin-core/src/entity/player.rs`, `pumpkin-core/src/world/entity_tracker.rs`, `pumpkin-plugin-wit/v0.2/player.wit`, `pumpkin-wasm-host-v0_2/src/player.rs`.
 - Upstream/master : meme trou (seul l'evenement `PlayerHideEntityEvent` est defini, jamais declenche ; ni `hide_entity` ni WIT).
 - Proposable upstream : oui.
